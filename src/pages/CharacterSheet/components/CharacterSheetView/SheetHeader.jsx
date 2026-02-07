@@ -9,7 +9,8 @@ const SheetHeader = ({ c, onUpdate, onImageSelect, theme }) => {
             <div className="flex-1 flex flex-wrap gap-6 items-center z-10">
                 <div className="w-full lg:flex-1 lg:min-w-[200px]">
                     <label className={`block text-[10px] font-bold ${theme.accentText} uppercase tracking-widest mb-1`}>Character Name</label>
-                    <input spellCheck="false" type="text" value={c.name} onChange={(e) => handleChange('name', e.target.value)} className={`w-full text-xl md:text-3xl dnd-font font-bold border-b ${theme.border} outline-none focus:${theme.accentBorder} bg-transparent py-1 transition-colors ${theme.text}`} />
+                    {/* FIX: Mindre font størrelse (text-lg md:text-2xl) */}
+                    <input spellCheck="false" type="text" value={c.name} onChange={(e) => handleChange('name', e.target.value)} className={`w-full text-lg md:text-2xl dnd-font font-bold border-b ${theme.border} outline-none focus:${theme.accentBorder} bg-transparent py-1 transition-colors ${theme.text}`} />
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 flex-[4] w-full">
                     {[{l:'Class & Lvl',f:'class',sf:'level'},{l:'Subclass',f:'subclass'},{l:'Species',f:'species'},{l:'Background',f:'background'},{l:'Alignment',f:'alignment'},{l:'XP',f:'xp'}].map(i => (
@@ -17,7 +18,18 @@ const SheetHeader = ({ c, onUpdate, onImageSelect, theme }) => {
                             <label className={`block text-[9px] font-bold ${theme.subText} uppercase mb-0.5`}>{i.l}</label>
                             <div className="flex gap-2">
                                 <input type={i.f==='xp'?'number':'text'} value={c[i.f]} onChange={(e) => handleChange(i.f, i.f==='xp'?parseInt(e.target.value):e.target.value)} className={`w-full font-semibold border-b ${theme.border} outline-none focus:${theme.accentBorder} bg-transparent py-1 text-xs truncate ${theme.text}`} />
-                                {i.sf && <input type="number" value={c[i.sf]} onChange={(e) => handleChange(i.sf, parseInt(e.target.value)||1)} className={`w-8 font-bold border-b ${theme.border} outline-none text-center focus:${theme.accentBorder} bg-transparent py-1 text-xs ${theme.text}`} />}
+                                {/* FIX: Tillad tomt level felt */}
+                                {i.sf && (
+                                    <input 
+                                        type="number" 
+                                        value={c[i.sf] === 0 || c[i.sf] === "" ? "" : c[i.sf]} 
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            handleChange(i.sf, val === "" ? "" : parseInt(val));
+                                        }} 
+                                        className={`w-8 font-bold border-b ${theme.border} outline-none text-center focus:${theme.accentBorder} bg-transparent py-1 text-xs ${theme.text}`} 
+                                    />
+                                )}
                             </div>
                         </div>
                     ))}

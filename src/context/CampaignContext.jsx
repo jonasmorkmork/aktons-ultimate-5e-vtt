@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../firebase'; 
-// NYT: Tilføjet updateDoc og arrayUnion til imports
-import { doc, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore'; 
 import { useAuth } from './AuthContext'; 
+
+// Importér logik fra den nye fil
+import * as CombatSync from './CombatSync';
 
 const CampaignContext = createContext();
 
@@ -13,15 +15,20 @@ export function useCampaign() {
 export function CampaignProvider({ children }) {
     const { currentUser } = useAuth();
 
-    // --- 1. EKSISTERENDE: ENCOUNTER BUILDER STATE ---
+    // --- 1. ENCOUNTER BUILDER STATE (LOKALT) ---
     const [activeEncounterData, setActiveEncounterData] = useState(() => {
         const saved = localStorage.getItem('vtt_active_encounter');
         return saved ? JSON.parse(saved) : null;
     });
 
-    const sendEncounterToCombat = (encounter) => {
+    // OPDATERET: Nu sender den også til Firebase (async)
+    const sendEncounterToCombat = async (encounter) => {
+        // Gem lokalt (som før)
         setActiveEncounterData(encounter);
         localStorage.setItem('vtt_active_encounter', JSON.stringify(encounter));
+        
+        // Send til Firebase (Active Combat)
+        return await CombatSync.addEncounterToCombat(currentUser, encounter);
     };
 
     const clearActiveEncounter = () => {
@@ -35,45 +42,62 @@ export function CampaignProvider({ children }) {
     });
     
     const [campaignData, setCampaignData] = useState(null);
-    const [role, setRole] = useState(null); // 'dm' | 'player' | null
+    const [role, setRole] = useState(null);
     const [isLoadingCampaign, setIsLoadingCampaign] = useState(false);
 
-    // LISTENER: Sync Campaign Data Real-time
+    // --- EFFECT: RESET ON USER CHANGE ---
     useEffect(() => {
-        if (!activeCampaignId) {
+        if (!currentUser) {
+            setCampaignData(null);
+            setRole(null);
+        }
+    }, [currentUser]);
+
+    // --- EFFECT: SYNC CAMPAIGN DATA ---
+    useEffect(() => {
+        if (!currentUser || !activeCampaignId) {
             setCampaignData(null);
             setRole(null);
             return;
         }
 
         setIsLoadingCampaign(true);
-        
-        const unsub = onSnapshot(doc(db, "campaigns", activeCampaignId), (docSnap) => {
-            setIsLoadingCampaign(false);
-            
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                setCampaignData({ id: docSnap.id, ...data });
 
-                if (currentUser && data.dmId === currentUser.uid) {
-                    setRole('dm');
+        const unsub = onSnapshot(doc(db, "campaigns", activeCampaignId), 
+            (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    setCampaignData({ id: docSnap.id, ...data });
+                    
+                    if (data.dmId === currentUser.uid) {
+                        setRole('dm');
+                    } else if (data.players && data.players.includes(currentUser.uid)) {
+                        setRole('player');
+                    } else {
+                        console.warn("User does not have access to this campaign");
+                        disconnectCampaign();
+                    }
                 } else {
-                    setRole('player');
+                    console.warn("Campaign deleted or not found");
+                    disconnectCampaign();
                 }
-            } else {
-                setCampaignData(null);
-                setRole(null);
+                setIsLoadingCampaign(false);
+            }, 
+            (error) => {
+                console.error("Campaign sync error:", error);
+                if (error.code === 'permission-denied') {
+                    console.error("Permission denied. Disconnecting.");
+                    disconnectCampaign();
+                }
+                setIsLoadingCampaign(false);
             }
-        }, (error) => {
-            console.error("Campaign sync error:", error);
-            setIsLoadingCampaign(false);
-        });
+        );
 
         return () => unsub();
-    }, [activeCampaignId, currentUser]);
+    }, [activeCampaignId, currentUser?.uid]);
 
-    // Helpers til at forbinde/afbryde
     const connectToCampaign = (campaignId) => {
+        if (!campaignId) return;
         setActiveCampaignId(campaignId);
         localStorage.setItem('vtt_active_campaign_id', campaignId);
     };
@@ -85,45 +109,20 @@ export function CampaignProvider({ children }) {
         localStorage.removeItem('vtt_active_campaign_id');
     };
 
-    // --- 3. NYT: SEND ITEM LOGIC (Mellemmanden) ---
-    const sendItemToCharacter = async (characterId, itemData) => {
-        if (!characterId) return { success: false, message: "No character selected" };
+    // --- WRAPPER FUNKTIONER ---
+    // Disse kalder logikken i CombatSync.js med den nødvendige context (currentUser, campaignData)
+    
+    const sendToCombat = (char, uid) => 
+        CombatSync.sendCharacterToCombat(currentUser, char, uid);
 
-        try {
-            // 1. Bestem kategori baseret på item type (matcher SheetBio logik)
-            // Vi antager at itemData har en 'type' eller 'category' property, eller vi gætter
-            let category = 'items'; // Default
-            let typeLower = (itemData.type || "").toLowerCase();
-            
-            // Simpel logik til at placere det rigtigt i inventory
-            if (itemData.damage || typeLower.includes('weapon') || typeLower.includes('sword') || typeLower.includes('axe') || typeLower.includes('bow')) {
-                category = 'weapons';
-            } else if (itemData.ac || typeLower.includes('armor') || typeLower.includes('shield')) {
-                category = 'armor';
-            }
+    const syncPartyToCombat = (playerCharacters) => 
+        CombatSync.syncPartyToCombat(currentUser, playerCharacters);
 
-            // 2. Klargør data (Sikr at det har et unikt ID til modtageren)
-            const itemToSend = {
-                ...itemData,
-                id: Date.now(), // Nyt ID så det ikke konflikter
-                addedAt: new Date().toISOString()
-            };
+    const syncHpToCombat = (currentHp, maxHp, tempHp) => 
+        CombatSync.syncHpToCombat(currentUser, campaignData, role, currentHp, maxHp, tempHp);
 
-            // 3. Opdater karakterens dokument i 'characters' kollektionen
-            const charRef = doc(db, "characters", characterId);
-            
-            // Vi bruger dot-notation til at opdatere et array inde i et objekt: "inventory.weapons"
-            await updateDoc(charRef, {
-                [`inventory.${category}`]: arrayUnion(itemToSend)
-            });
-
-            return { success: true, message: `Sent ${itemData.name} to player!` };
-
-        } catch (error) {
-            console.error("Error sending item:", error);
-            return { success: false, message: "Failed to send item." };
-        }
-    };
+    const sendItemToCharacter = (targetUid, item) => 
+        CombatSync.sendItemToCharacter(campaignData, targetUid, item);
 
     const value = {
         activeEncounterData,
@@ -137,8 +136,10 @@ export function CampaignProvider({ children }) {
         connectToCampaign,
         disconnectCampaign,
         
-        // Den nye funktion
-        sendItemToCharacter 
+        sendItemToCharacter,
+        sendToCombat,       
+        syncPartyToCombat,
+        syncHpToCombat
     };
 
     return (

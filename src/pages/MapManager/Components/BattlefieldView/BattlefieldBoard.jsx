@@ -175,18 +175,23 @@ const SpellTemplateShape = React.memo(({ data, gridSize, isSelected, onSelect, o
     );
 });
 
-// --- 4. TOKEN ITEM ---
+// --- 4. TOKEN ITEM (REN DRAG & DROP) ---
 const TokenItem = React.memo(({ token, isSelected, gridSize, pan, zoom, gridSettings, snapToCell, onSelect, onUpdatePos, onDragStartGlobal, onDragMoveGlobal, onDragEndGlobal, isMovingGridMode }) => {
     const [dragState, setDragState] = useState(null); 
-    const radius = (token.size || gridSize) / 2;
+    
+    // Størrelse hentes fra token (default til gridSize)
+    const size = token.size || gridSize;
+    const radius = size / 2;
     const scale = gridSize / 50; 
     const fontSize = Math.max(10, 11 * scale); 
     const padding = 3 * scale; const pointerSize = 8 * scale; const offset = 15 * scale; const cornerRadius = 4 * scale;
+
     const handleDragStart = (e) => { 
         onSelect(e); 
         if (onDragStartGlobal) onDragStartGlobal(token.id); 
         setDragState({ startX: token.x, startY: token.y, currentX: token.x, currentY: token.y, text: "0 ft." }); 
     };
+
     const handleDragMove = (e) => {
         const currentX = e.target.x(); const currentY = e.target.y();
         let snapPos = { x: currentX, y: currentY }; 
@@ -196,28 +201,46 @@ const TokenItem = React.memo(({ token, isSelected, gridSize, pan, zoom, gridSett
         setDragState(prev => ({ ...prev, currentX: currentX, currentY: currentY, text: `${feet} ft.` }));
         if (onDragMoveGlobal) onDragMoveGlobal(token.id, currentX, currentY);
     };
+
     const handleDragEnd = (e) => {
         setDragState(null); let newX = e.target.x(); let newY = e.target.y();
         if (gridSettings.snap) { const s = snapToCell(newX, newY); newX = s.x; newY = s.y; e.target.position({ x: newX, y: newY }); }
         if (onDragEndGlobal) onDragEndGlobal();
-        onUpdatePos(token.id, newX, newY);
+        onUpdatePos(token.id, { x: newX, y: newY });
     };
+
     const ghostX = dragState ? dragState.startX - dragState.currentX : 0;
     const ghostY = dragState ? dragState.startY - dragState.currentY : 0;
+
     return (
-        <Group 
-            x={token.x} y={token.y} draggable={!isMovingGridMode} 
-            dragBoundFunc={(pos) => { 
-                if (gridSettings.snap) { const wX = (pos.x - pan.x) / zoom; const wY = (pos.y - pan.y) / zoom; const s = snapToCell(wX, wY); return { x: s.x * zoom + pan.x, y: s.y * zoom + pan.y }; } 
-                return pos; 
-            }} 
-            onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd} onMouseDown={(e) => { e.cancelBubble = true; onSelect(e); }}
-        >
-            {dragState && (<><Line points={[0, 0, ghostX, ghostY]} stroke="white" strokeWidth={3 * scale} dash={[10 * scale, 10 * scale]} opacity={0.8} shadowColor="black" shadowBlur={5} listening={false} perfectDrawEnabled={false} /><Circle x={ghostX} y={ghostY} radius={radius} fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth={1} dash={[5 * scale, 5 * scale]} listening={false} perfectDrawEnabled={false} /></>)}
-            {isSelected && <Circle radius={radius + 3} stroke="#facc15" strokeWidth={3} shadowColor="#facc15" shadowBlur={20} shadowOpacity={0.8} opacity={1} listening={false} perfectDrawEnabled={false} shadowForStrokeEnabled={false} />}
-            {token.image ? (<Group clipFunc={(ctx) => ctx.arc(0, 0, radius, 0, Math.PI * 2, false)}><URLImage src={token.image} x={-radius} y={-radius} width={radius*2} height={radius*2} fit="cover" perfectDrawEnabled={false} /></Group>) : (<Circle radius={radius} fill="red" stroke="black" strokeWidth={1} perfectDrawEnabled={false} />)}
-            <Circle radius={radius} stroke="black" strokeWidth={1} listening={false} perfectDrawEnabled={false} shadowForStrokeEnabled={false} />
-            {dragState && (<Label y={-radius - offset} listening={false}><Tag fill="rgba(15, 23, 42, 0.9)" cornerRadius={cornerRadius} stroke="white" strokeWidth={1 * scale} pointerDirection="down" pointerWidth={pointerSize} pointerHeight={pointerSize} shadowColor="black" shadowBlur={10} perfectDrawEnabled={false} /><Text text={dragState.text} fontFamily="monospace" fontSize={fontSize} fontStyle="bold" padding={padding} fill="white" perfectDrawEnabled={false} /></Label>)}
+        <Group>
+            <Group 
+                x={token.x} y={token.y} 
+                draggable={!isMovingGridMode} 
+                dragBoundFunc={(pos) => { 
+                    if (gridSettings.snap) { const wX = (pos.x - pan.x) / zoom; const wY = (pos.y - pan.y) / zoom; const s = snapToCell(wX, wY); return { x: s.x * zoom + pan.x, y: s.y * zoom + pan.y }; } 
+                    return pos; 
+                }} 
+                onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd}
+                onMouseDown={(e) => { e.cancelBubble = true; onSelect(e); }}
+                onTap={(e) => { e.cancelBubble = true; onSelect(e); }}
+            >
+                {dragState && (<><Line points={[0, 0, ghostX, ghostY]} stroke="white" strokeWidth={3 * scale} dash={[10 * scale, 10 * scale]} opacity={0.8} shadowColor="black" shadowBlur={5} listening={false} perfectDrawEnabled={false} /><Circle x={ghostX} y={ghostY} radius={radius} fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth={1} dash={[5 * scale, 5 * scale]} listening={false} perfectDrawEnabled={false} /></>)}
+                
+                {/* Visuals */}
+                {token.image ? (
+                    <Group clipFunc={(ctx) => ctx.arc(0, 0, radius, 0, Math.PI * 2, false)}>
+                        <URLImage src={token.image} x={-radius} y={-radius} width={radius*2} height={radius*2} fit="cover" perfectDrawEnabled={false} />
+                    </Group>
+                ) : (
+                    <Circle radius={radius} fill="red" stroke="black" strokeWidth={1} perfectDrawEnabled={false} />
+                )}
+                
+                {/* Selection Border */}
+                <Circle radius={radius} stroke={isSelected ? "#facc15" : "black"} strokeWidth={isSelected ? 3 : 1} shadowColor={isSelected ? "#facc15" : null} shadowBlur={isSelected ? 10 : 0} listening={false} perfectDrawEnabled={false} shadowForStrokeEnabled={false} />
+
+                {dragState && (<Label y={-radius - offset} listening={false}><Tag fill="rgba(15, 23, 42, 0.9)" cornerRadius={cornerRadius} stroke="white" strokeWidth={1 * scale} pointerDirection="down" pointerWidth={pointerSize} pointerHeight={pointerSize} shadowColor="black" shadowBlur={10} perfectDrawEnabled={false} /><Text text={dragState.text} fontFamily="monospace" fontSize={fontSize} fontStyle="bold" padding={padding} fill="white" perfectDrawEnabled={false} /></Label>)}
+            </Group>
         </Group>
     );
 });
@@ -237,9 +260,9 @@ const BattlefieldBoard = ({ logic }) => {
         isCreatingFog, fogTool, currentFogRect, currentPolyPoints, polyMousePos,
         selectedTokenIds, selectedTemplateIds,
         handleMouseDown, handleMapDragOver, handleMapDrop, handleWheel,
-        updateTokenPosition, updateTemplate, setPan,
+        updateToken, updateTemplate, setPan,
         snapToCell, updateFogBox, setSelectedTokenIds, updateTemplatePosition,
-        isMovingGridMode, isSelecting, selectionBox 
+        isMovingGridMode, isSelecting, selectionBox, deleteSelected
     } = logic;
 
     const safeActiveLayerId = activeLayerId || (layers.length > 0 ? layers[0].id : null);
@@ -269,17 +292,14 @@ const BattlefieldBoard = ({ logic }) => {
                     handleMouseDown(e.evt, 'map'); 
                 }}
             >
-                {/* LAYER 1: STATIC MAP (Rettet: Fjernet listening={false}) */}
                 <Layer> 
                     {activeLayer?.mapData && <URLImage src={activeLayer.mapData} x={0} y={0} />}
                 </Layer>
                 
-                {/* GRID LAYER (Rettet: Fjernet listening={false} fra Layer så events går igennem hvis nødvendigt, men selve GridLayer har det på linjer) */}
                 <Layer listening={false}>
                     <GridLayer gridSettings={gridSettings} width={5000} height={5000} />
                 </Layer>
 
-                {/* LAYER 2: INTERACTIVE OBJECTS */}
                 <Layer>
                     {visibleTemplates.map(t => {
                         const isTetheredToSelection = t.originTokenId && selectedTokenIds.has(t.originTokenId);
@@ -294,13 +314,12 @@ const BattlefieldBoard = ({ logic }) => {
                         if (isFollower) {
                             return (<React.Fragment key={token.id}><StaticGhostToken token={token} x={token.x} y={token.y} gridSize={gridSize} /><MovingFollowerToken token={token} x={token.x + dragFeedback.deltaX} y={token.y + dragFeedback.deltaY} gridSize={gridSize} /></React.Fragment>);
                         }
-                        return (<TokenItem key={token.id} token={token} isSelected={selectedTokenIds?.has(token.id)} gridSize={gridSize} pan={pan} zoom={zoom} gridSettings={gridSettings} snapToCell={snapToCell} isMovingGridMode={isMovingGridMode} onSelect={(e) => handleMouseDown(e.evt, 'token', token.id)} onDragStartGlobal={(id) => { if (!selectedTokenIds.has(id)) setSelectedTokenIds(new Set([id])); }} onDragMoveGlobal={handleGlobalDragMove} onDragEndGlobal={handleGlobalDragEnd} onUpdatePos={updateTokenPosition} />);
+                        return (<TokenItem key={token.id} token={token} isSelected={selectedTokenIds?.has(token.id)} gridSize={gridSize} pan={pan} zoom={zoom} gridSettings={gridSettings} snapToCell={snapToCell} isMovingGridMode={isMovingGridMode} onSelect={(e) => handleMouseDown(e.evt, 'token', token.id)} onDragStartGlobal={(id) => { if (!selectedTokenIds.has(id)) setSelectedTokenIds(new Set([id])); }} onDragMoveGlobal={handleGlobalDragMove} onDragEndGlobal={handleGlobalDragEnd} onUpdatePos={updateToken} />);
                     })}
 
                     {isSelecting && selectionBox && (<Rect x={Math.min(selectionBox.startX, selectionBox.currentX)} y={Math.min(selectionBox.startY, selectionBox.currentY)} width={Math.abs(selectionBox.currentX - selectionBox.startX)} height={Math.abs(selectionBox.currentY - selectionBox.startY)} fill="rgba(0, 162, 255, 0.2)" stroke="rgba(0, 162, 255, 0.8)" strokeWidth={1 / zoom} listening={false} />)}
                 </Layer>
 
-                {/* LAYER 3: FOG */}
                 {fogEnabled && (
                     <Layer>
                         {visibleFogBoxes.map(box => box.type === 'poly' ? 

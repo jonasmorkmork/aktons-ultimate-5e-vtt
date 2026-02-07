@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatBlockEditor from './components/StatBlockEditor';
-import ItemStatBlockEditor from './components/ItemStatBlockEditor'; // <--- NY IMPORT
+import ItemStatBlockEditor from './components/ItemStatBlockEditor';
 import StatBlockDisplay from './components/StatBlockDisplay';
 import EncounterBuilder from './components/EncounterBuilder';
+import SendItemModal from './components/SendItemModal';
 import { Icon, Icons, ResizeHandle } from './components/StatBlockIcons';
 import FileBrowser from '../MapManager/components/FileBrowser';
 
@@ -20,7 +21,8 @@ const { Minus, Plus } = Icons;
 const StatBlockManager = () => {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
-    const { sendEncounterToCombat } = useCampaign();
+    
+    const { sendEncounterToCombat, sendToCombat } = useCampaign();
 
     // State
     const [view, setView] = useState('list'); 
@@ -28,7 +30,7 @@ const StatBlockManager = () => {
     const [notification, setNotification] = useState(null);
 
     const [monsters, setMonsters] = useState([]);
-    const [items, setItems] = useState([]); // <--- NY ITEM STATE
+    const [items, setItems] = useState([]); 
     const [folders, setFolders] = useState([]);
     const [encounters, setEncounters] = useState([]);
     
@@ -43,6 +45,9 @@ const StatBlockManager = () => {
     const [screenMonsters, setScreenMonsters] = useState([]);
     const [screenSearch, setScreenSearch] = useState("");
 
+    // Send Item State
+    const [itemToSend, setItemToSend] = useState(null);
+
     // --- LOAD DATA ---
     useEffect(() => {
         const loadData = async () => {
@@ -53,7 +58,7 @@ const StatBlockManager = () => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         setMonsters(data.monsters || []);
-                        setItems(data.items || []); // <--- LOAD ITEMS
+                        setItems(data.items || []); 
                         setFolders(data.folders || []);
                     }
                     const encRef = doc(db, "users", currentUser.uid, "data", "encounters");
@@ -64,7 +69,7 @@ const StatBlockManager = () => {
                 } catch (e) { console.error("Error loading from Firebase:", e); }
             } else {
                 const savedMonsters = localStorage.getItem('vtt_statblocks');
-                const savedItems = localStorage.getItem('vtt_items'); // <--- LOAD ITEMS
+                const savedItems = localStorage.getItem('vtt_items'); 
                 const savedFolders = localStorage.getItem('vtt_statblock_folders');
                 const savedEncounters = localStorage.getItem('vtt_encounters');
                 
@@ -129,7 +134,7 @@ const StatBlockManager = () => {
             setView('editor'); 
         } else if (activeTab === 'items') {
             setCurrentEditItem({ folderId: currentFolderId });
-            setView('item_editor'); // <-- NY VIEW MODE
+            setView('item_editor'); 
         } else {
             setCurrentEditItem(null); 
             setView('encounter_builder');
@@ -141,6 +146,75 @@ const StatBlockManager = () => {
         if (activeTab === 'monsters') setView('editor');
         else if (activeTab === 'items') setView('item_editor');
         else setView('encounter_builder');
+    };
+
+    const handleOpenSendModal = (e, item) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setItemToSend(item);
+    };
+
+    // --- BUTTON HANDLERS ---
+
+    const handleAddToCombat = async (e, monster) => {
+        e.preventDefault(); 
+        e.stopPropagation();
+        
+        const success = await sendToCombat(monster);
+        
+        if (success) {
+            setNotification(`Sent ${monster.name} to Library!`);
+            setTimeout(() => setNotification(null), 2000);
+        } else {
+            setNotification(`Failed to send ${monster.name}`);
+            setTimeout(() => setNotification(null), 2000);
+        }
+    };
+
+    // VIGTIGT FIX: Hydrering med String-Comparison (Løser "Could not find..." fejlen)
+    const handleSendEncounter = async (e, encounter) => {
+        e.preventDefault(); 
+        e.stopPropagation();
+        
+        // 1. Tjek om encounter har monstre/enemies
+        const rawList = encounter.enemies || encounter.monsters || [];
+        
+        if (rawList.length === 0) {
+            setNotification("Encounter is empty!");
+            setTimeout(() => setNotification(null), 2000);
+            return;
+        }
+
+        // 2. HYDRER DATA: Find de fulde statblocks i 'monsters' arrayet
+        const fullEnemies = rawList.map(ref => {
+            // FIX HER: Brug String() omkring ID'erne for at sikre match selv hvis en er tal og en er streng
+            const fullStats = monsters.find(m => String(m.id) === String(ref.id));
+            
+            if (fullStats) {
+                // Returner det fulde monster, men behold count fra encounteret
+                return { ...fullStats, count: ref.count || 1 };
+            } else {
+                console.warn(`Could not find full stats for ${ref.name} (ID: ${ref.id})`);
+                // Send referencen videre, selvom den er tom (bedre end ingenting)
+                return ref;
+            }
+        });
+
+        // 3. Sammensæt det "Fyldte" encounter
+        const hydratedEncounter = {
+            ...encounter,
+            enemies: fullEnemies
+        };
+        
+        // 4. Send det afsted
+        const success = await sendEncounterToCombat(hydratedEncounter);
+        
+        if (success) {
+            setNotification(`Encounter "${encounter.name}" Loaded to Combat!`);
+        } else {
+            setNotification(`Failed to load encounter.`);
+        }
+        setTimeout(() => setNotification(null), 2000);
     };
 
     // Save Monster
@@ -156,11 +230,12 @@ const StatBlockManager = () => {
         setView('list'); 
     };
 
-    // Save Item (NY)
+    // Save Item
     const handleSaveItemFromEditor = (itemData) => {
         const idToUse = itemData.id || currentEditItem?.id || Date.now().toString();
         const folderToUse = itemData.folderId || currentEditItem?.folderId || currentFolderId;
-        const finalItem = { ...itemData, id: idToUse, folderId: folderToUse, type: 'item' }; 
+        
+        const finalItem = { ...itemData, id: idToUse, folderId: folderToUse }; 
 
         const updatedList = items.some(i => String(i.id) === String(idToUse))
             ? items.map(i => String(i.id) === String(idToUse) ? finalItem : i)
@@ -207,7 +282,7 @@ const StatBlockManager = () => {
         if (type === 'item') saveItems(items.map(i => itemIds.includes(i.id) ? { ...i, folderId: targetFolderId } : i));
     };
 
-    // DM Screen Handlers (Kun for monsters indtil videre)
+    // DM Screen Handlers
     const addToScreen = (monster) => { if (!screenMonsters.some(m => m.id === monster.id)) setScreenMonsters([...screenMonsters, { ...monster, scale: 0.8 }]); };
     const removeFromScreen = (id) => { setScreenMonsters(screenMonsters.filter(m => m.id !== id)); };
     const handleResizeStart = (e, id, currentScale) => { e.preventDefault(); e.stopPropagation(); const startY = e.clientY; const startScale = currentScale || 0.8; const onMouseMove = (moveEvent) => { const deltaY = moveEvent.clientY - startY; const newScale = Math.max(0.4, Math.min(2.0, startScale + (deltaY * 0.003))); setScreenMonsters(prev => prev.map(m => m.id === id ? { ...m, scale: newScale } : m)); }; const onMouseUp = () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); }; window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onMouseUp); };
@@ -255,7 +330,7 @@ const StatBlockManager = () => {
                                 <div key={m.id} className="relative group break-inside-avoid shadow-2xl transition-all">
                                     <button onClick={() => removeFromScreen(m.id)} className="absolute -top-3 -right-3 bg-red-600 text-white p-1.5 rounded-full shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 hover:scale-110"><Icon path={Icons.Trash} className="w-3 h-3"/></button>
                                     <div className="absolute bottom-0 right-0 w-8 h-8 z-20 cursor-se-resize flex items-end justify-end p-1 opacity-0 group-hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, m.id, m.scale)}>
-                                        <div className="bg-slate-900/80 text-white rounded-tl-lg p-0.5"><ResizeHandle className="w-4 h-4 text-amber-500" /></div>
+                                            <div className="bg-slate-900/80 text-white rounded-tl-lg p-0.5"><ResizeHandle className="w-4 h-4 text-amber-500" /></div>
                                     </div>
                                     <StatBlockDisplay data={m} scale={m.scale || 0.8} />
                                 </div>
@@ -341,7 +416,9 @@ const StatBlockManager = () => {
                             <div onClick={(e) => { e.stopPropagation(); handleEditItem(monster); }} className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:border-blue-500 transition-all cursor-pointer h-full flex flex-col group relative shadow-sm hover:shadow-md">
                                 <div className="absolute top-0 left-0 w-1 h-full bg-blue-600 rounded-l-lg opacity-75 group-hover:opacity-100 transition-opacity"></div>
                                 
+                                {/* FIX: Type="button" */}
                                 <button 
+                                    type="button"
                                     onClick={(e) => handleAddToCombat(e, monster)}
                                     className="absolute bottom-2 right-2 p-2 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-full transition-colors shadow-lg z-20 border border-slate-600"
                                     title="Send to CombatFlow"
@@ -367,7 +444,7 @@ const StatBlockManager = () => {
                     />
                 )}
 
-                {/* --- ITEMS TAB (NY) --- */}
+                {/* --- ITEMS TAB --- */}
                 {activeTab === 'items' && (
                     <FileBrowser
                         items={items}
@@ -383,11 +460,25 @@ const StatBlockManager = () => {
                         renderItem={(item) => (
                             <div onClick={(e) => { e.stopPropagation(); handleEditItem(item); }} className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:border-purple-500 transition-all cursor-pointer h-full flex flex-col group relative shadow-sm hover:shadow-md">
                                 <div className="absolute top-0 left-0 w-1 h-full bg-purple-600 rounded-l-lg opacity-75 group-hover:opacity-100 transition-opacity"></div>
+                                
+                                {/* FIX: Type="button" */}
+                                <button 
+                                    type="button"
+                                    onClick={(e) => handleOpenSendModal(e, item)}
+                                    className="absolute bottom-2 right-2 p-2 bg-slate-700 hover:bg-purple-600 text-slate-300 hover:text-white rounded-full transition-colors shadow-lg z-20 border border-slate-600"
+                                    title="Send to Player"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                    </svg>
+                                </button>
+
                                 <div className="pl-2">
                                     <div className="flex justify-between items-start mb-2">
-                                        <h3 className="font-bold text-lg text-slate-100 truncate pr-2 group-hover:text-purple-400 transition-colors">{item.name || "Unnamed"}</h3>
+                                        <h3 className="font-bold text-lg text-slate-100 truncate pr-10 group-hover:text-purple-400 transition-colors">{item.name || "Unnamed"}</h3>
                                     </div>
-                                    <div className="text-xs text-slate-400 italic mb-2 truncate border-b border-slate-700 pb-2">
+                                    <div className="text-xs text-slate-400 italic mb-2 truncate border-b border-slate-700 pb-2 pr-8">
                                         {item.type}, {item.rarity}
                                     </div>
                                     <div className="text-[10px] text-slate-500 line-clamp-3 leading-relaxed">
@@ -418,9 +509,16 @@ const StatBlockManager = () => {
                             return (
                                 <div onClick={(e) => { e.stopPropagation(); handleEditItem(enc); }} className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:border-red-500 transition-all cursor-pointer h-full flex flex-col group relative shadow-sm hover:shadow-md min-h-[180px]">
                                     <div className="absolute top-0 left-0 w-1 h-full bg-red-600 rounded-l-lg opacity-75 group-hover:opacity-100 transition-opacity"></div>
-                                    <button onClick={(e) => handleSendEncounter(e, enc)} className="absolute bottom-2 right-2 p-2 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-full transition-colors shadow-lg z-20 border border-slate-600" title="Send to CombatFlow">
+                                    
+                                    {/* FIX: Type="button" og preventDefault */}
+                                    <button 
+                                        type="button"
+                                        onClick={(e) => handleSendEncounter(e, enc)} 
+                                        className="absolute bottom-2 right-2 p-2 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-full transition-colors shadow-lg z-20 border border-slate-600" title="Send to CombatFlow"
+                                    >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 17.5L3 6V3h3l11.5 11.5"/><path d="M13 19l6 2l3-3l-2-6l-7-1"/><path d="M8 16l2-2"/></svg>
                                     </button>
+                                    
                                     <div className="pl-2 flex flex-col h-full">
                                         <div>
                                             <div className="flex justify-between items-start mb-2"><h3 className="font-bold text-lg text-slate-100 truncate pr-2 group-hover:text-red-400 transition-colors">{enc.name}</h3></div>
@@ -454,6 +552,14 @@ const StatBlockManager = () => {
                     </div>
                 </div>
             )}
+
+            {/* SEND ITEM MODAL */}
+            <SendItemModal 
+                show={!!itemToSend} 
+                onClose={() => setItemToSend(null)} 
+                item={itemToSend} 
+            />
+
         </div>
     );
 };

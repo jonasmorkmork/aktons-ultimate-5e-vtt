@@ -3,7 +3,7 @@ import { useBattlefieldLogic } from './useBattlefieldLogic';
 import BattlefieldTopBar from './BattlefieldTopBar';
 import BattlefieldBoard from './BattlefieldBoard';
 import BattlefieldLibrary from './BattlefieldLibrary';
-import { Trash2, Circle, Square, Minus, Cone, X } from '../MapIcons'; // Hent Cone
+import { Trash2, Circle, Square, Minus, Cone, X } from '../MapIcons'; 
 
 const BattlefieldView = ({ session, maps, tokenLibrary, folders, onSave, onExit, onAddTokenToLibrary, onMoveItems, onDeleteItems }) => {
     const logic = useBattlefieldLogic(session, maps, tokenLibrary, onSave, onAddTokenToLibrary);
@@ -43,7 +43,6 @@ const BattlefieldView = ({ session, maps, tokenLibrary, folders, onSave, onExit,
 
     const confirmTemplate = () => {
         const selectedId = Array.from(logic.selectedTokenIds)[0];
-        // Sikr at radius er et tal før vi sender det videre
         const radius = parseInt(logic.spellParams.radius) || 0;
         
         logic.addSpellTemplate({
@@ -56,11 +55,10 @@ const BattlefieldView = ({ session, maps, tokenLibrary, folders, onSave, onExit,
         setTemplateBuilderMode(null); 
     };
 
-    // Helper til input change: Tillader tom streng
     const handleRadiusChange = (e) => {
         const val = e.target.value;
         if (val === '') {
-            logic.setSpellParams(p => ({...p, radius: ''})); // Sæt til tom streng i state
+            logic.setSpellParams(p => ({...p, radius: ''})); 
         } else {
             const num = parseInt(val);
             if (!isNaN(num)) {
@@ -110,8 +108,26 @@ const BattlefieldView = ({ session, maps, tokenLibrary, folders, onSave, onExit,
                                 <Trash2 size={18} />
                             </button>
 
-                            {logic.selectedTokenIds.size === 1 && (
+                            {/* --- TOKEN CONTROLS --- */}
+                            {logic.selectedTokenIds.size === 1 && logic.selectedToken && (
                                 <>
+                                    <div className="h-6 w-px bg-slate-600 mx-1"></div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold text-amber-500 uppercase">Scale</span>
+                                        <input 
+                                            type="range" 
+                                            min="0.5" 
+                                            max="4" 
+                                            step="0.5"
+                                            value={(logic.selectedToken.size || logic.gridSettings.size) / logic.gridSettings.size} 
+                                            onChange={(e) => logic.updateToken(logic.selectedToken.id, { size: parseFloat(e.target.value) * logic.gridSettings.size })}
+                                            className="w-20 accent-amber-500 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                        <span className="text-[10px] text-slate-300 w-6 text-right">
+                                            {Math.round(((logic.selectedToken.size || logic.gridSettings.size) / logic.gridSettings.size) * 10) / 10}x
+                                        </span>
+                                    </div>
+
                                     <div className="h-6 w-px bg-slate-600 mx-1"></div>
                                     <div className="flex gap-1">
                                         <button onClick={() => setTemplateBuilderMode('circle')} className="p-2 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full transition-colors" title="Sphere / Circle"><Circle size={18} /></button>

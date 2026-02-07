@@ -18,6 +18,49 @@ const ItemDisplay = ({ data }) => {
                     </div>
                 </div>
 
+                {/* WEAPON / ARMOR STATS ROW */}
+                {(data.type === 'Weapon' || data.type === 'Armor' || data.type === 'Shield') && (
+                    <div className="mb-4 text-sm font-serif text-[#4c1d95] font-bold border-b border-[#6b21a8]/30 pb-2">
+                        
+                        {/* WEAPON DISPLAY */}
+                        {data.type === 'Weapon' && (
+                            <div className="flex justify-between items-start w-full">
+                                {/* VENSTRE SIDE: Skade og Type */}
+                                <div className="flex flex-col">
+                                    {/* Linje 1: Damage + Damage Type */}
+                                    <span className="whitespace-nowrap text-sm font-bold leading-none">
+                                        {data.damage || "1d4"} {data.damageType}
+                                    </span>
+                                    
+                                    {/* Linje 2: Weapon Category + Mastery */}
+                                    <span className="text-black font-normal italic text-xs mt-1 opacity-80">
+                                        {data.weaponCategory || "Simple Melee Weapon"}
+                                        {data.mastery && <span className="ml-1">({data.mastery})</span>}
+                                    </span>
+                                </div>
+                                
+                                {/* HØJRE SIDE: Properties liste */}
+                                {data.properties && (
+                                    <div className="text-black font-normal italic flex flex-col text-right text-xs">
+                                        {data.properties.split(',').map((prop, index) => (
+                                            <span key={index}>{prop.trim()}</span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ARMOR DISPLAY */}
+                        {(data.type === 'Armor' || data.type === 'Shield') && (
+                            <div className="flex gap-4">
+                                <span>AC {data.ac || 10}</span>
+                                <span className="text-black font-normal">({data.category || "Light"})</span>
+                                {data.stealthDis && <span className="text-red-800 italic">Stealth Disadv.</span>}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Description Text (Flavor) */}
                 {data.description && (
                     <div className="text-sm leading-relaxed text-black font-serif whitespace-pre-wrap mb-4">
@@ -52,11 +95,27 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
         rarity: "Uncommon",
         attunement: false,
         description: "",
-        mechanics: [] 
+        mechanics: [],
+        // Weapon specific
+        damage: "",
+        damageType: "",     
+        weaponCategory: "", 
+        mastery: "", // NYT FELT
+        properties: "",
+        // Armor specific
+        ac: "",
+        category: "Light",
+        stealthDis: false
     };
 
     const [mode, setMode] = useState('builder');
-    const [data, setData] = useState({ ...defaultData, ...initialData });
+    
+    const [data, setData] = useState(() => {
+        const start = { ...defaultData, ...initialData };
+        if (start.type === 'item') start.type = 'Wondrous Item';
+        return start;
+    });
+    
     const [rawText, setRawText] = useState("");
     const previewRef = useRef(null);
 
@@ -69,7 +128,19 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
 
     // --- TEXT GENERATOR ---
     const generateText = (d) => {
-        let txt = `${d.name}\n${d.type}, ${d.rarity}${d.attunement ? " (requires attunement)" : ""}\n\n`;
+        let txt = `${d.name}\n${d.type}, ${d.rarity}${d.attunement ? " (requires attunement)" : ""}\n`;
+        
+        if (d.type === 'Weapon') {
+            txt += `Damage: ${d.damage} ${d.damageType}\n`;
+            txt += `Category: ${d.weaponCategory}\n`;
+            if (d.mastery) txt += `Mastery: ${d.mastery}\n`;
+            txt += `Properties: ${d.properties}\n`;
+        }
+        if (d.type === 'Armor' || d.type === 'Shield') {
+            txt += `AC: ${d.ac} (${d.category})${d.stealthDis ? ", Stealth Disadvantage" : ""}\n`;
+        }
+
+        txt += `\n`;
         if (d.description) txt += `${d.description}\n\n`;
         if (d.mechanics && d.mechanics.length > 0) {
             d.mechanics.forEach(m => {
@@ -78,88 +149,6 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
         }
         return txt.trim();
     };
-
-    // --- SMART PARSER LOGIC ---
-    const parseInput = (text) => {
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        const newData = JSON.parse(JSON.stringify(defaultData));
-        
-        if (lines.length === 0) return newData;
-
-        // Line 1: Name
-        newData.name = lines[0];
-
-        // Line 2: Meta (Type, Rarity, Attunement)
-        let startIndex = 1;
-        if (lines.length > 1) {
-            const meta = lines[1].toLowerCase();
-            
-            const rarities = ["common", "uncommon", "rare", "very rare", "legendary", "artifact"];
-            const types = ["armor", "potion", "ring", "rod", "scroll", "staff", "wand", "weapon", "wondrous item"];
-            const hasMetaKeyword = [...rarities, ...types, "attunement"].some(k => meta.includes(k));
-
-            if (hasMetaKeyword) {
-                startIndex = 2; 
-                
-                const negativeAttunement = meta.includes("kræver ikke") || meta.includes("requires no") || meta.includes("no attunement");
-                if (meta.includes("attunement") && !negativeAttunement) {
-                    newData.attunement = true;
-                } else {
-                    newData.attunement = false;
-                }
-
-                const foundRarity = rarities.find(r => meta.includes(r));
-                if (foundRarity) newData.rarity = foundRarity.charAt(0).toUpperCase() + foundRarity.slice(1);
-
-                const foundType = types.find(t => meta.includes(t));
-                if (foundType) newData.type = foundType.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            }
-        }
-
-        // Rest: Description & Mechanics loop
-        const remainingLines = lines.slice(startIndex);
-        const mechanics = [];
-        let description = "";
-        let currentSection = 'description'; 
-
-        remainingLines.forEach(line => {
-            const l = line.trim();
-            
-            // Ignorer sektions-overskrifter
-            if (/^(egenskaber|properties|actions|features):?$/i.test(l)) return;
-
-            // Regex: Finder "1. Navn:" eller "Navn." 
-            const mechanicRegex = /^(?:\d+\.\s*)?(.+?)(?::|\.)\s+(.+)/;
-            const match = l.match(mechanicRegex);
-            
-            if (match && match[1].length < 60) {
-                mechanics.push({ name: match[1].trim(), desc: match[2].trim() });
-                currentSection = 'mechanic';
-            } else {
-                if (currentSection === 'description') {
-                    if (description) description += "\n\n" + l;
-                    else description = l;
-                } else {
-                    if (mechanics.length > 0) {
-                        const lastMech = mechanics[mechanics.length - 1];
-                        lastMech.desc += "\n\n" + l; 
-                    }
-                }
-            }
-        });
-
-        newData.description = description;
-        newData.mechanics = mechanics;
-
-        return newData;
-    };
-
-    // Mode Switching
-    useEffect(() => { 
-        if (mode === 'text') { 
-            setData(prev => ({ ...parseInput(rawText), id: prev.id, folderId: prev.folderId })); 
-        } 
-    }, [rawText, mode]);
 
     const handleSwitchMode = (newMode) => { 
         if (newMode === 'text') setRawText(generateText(data)); 
@@ -182,6 +171,8 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
         });
     };
 
+    const itemTypes = ["Wondrous Item", "Weapon", "Armor", "Shield", "Potion", "Ring", "Rod", "Scroll", "Staff", "Wand"];
+
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 p-4 md:p-8 font-sans-dnd">
             <div className="max-w-6xl mx-auto">
@@ -193,7 +184,6 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
                             <Icon path={Icons.ArrowLeft} /> Back
                         </button>
                         <div className="h-6 w-px bg-gray-700"></div>
-                        {/* RETTET: Ikon fjernet herfra */}
                         <h1 className="text-xl font-bold text-gray-100">
                             {data.name || 'New Item'}
                         </h1>
@@ -215,28 +205,30 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
                             </div>
 
                             {/* CONTENT */}
-                            <div className="flex-1 overflow-y-auto p-6">
+                            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                                 {mode === 'text' ? (
                                     <textarea 
                                         value={rawText} 
                                         onChange={(e) => setRawText(e.target.value)} 
                                         className="w-full h-full p-4 border border-gray-600 bg-gray-900 text-gray-200 rounded-md font-mono text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none" 
-                                        placeholder="Paste item text here..." 
+                                        placeholder="Generate text from builder..." 
                                         spellCheck="false" 
                                     />
                                 ) : (
                                     <div className="space-y-6">
                                         <div className="space-y-4">
+                                            {/* NAME */}
                                             <div>
                                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
                                                 <input type="text" value={data.name} onChange={(e) => handleChange('name', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-gray-200 focus:border-purple-500 outline-none" />
                                             </div>
 
+                                            {/* TYPE & RARITY */}
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
                                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
                                                     <select value={data.type} onChange={(e) => handleChange('type', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-gray-200 focus:border-purple-500 outline-none">
-                                                        {["Armor", "Potion", "Ring", "Rod", "Scroll", "Staff", "Wand", "Weapon", "Wondrous Item"].map(t => (<option key={t} value={t}>{t}</option>))}
+                                                        {itemTypes.map(t => (<option key={t} value={t}>{t}</option>))}
                                                     </select>
                                                 </div>
                                                 <div>
@@ -247,17 +239,83 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
                                                 </div>
                                             </div>
 
+                                            {/* ATTUNEMENT */}
                                             <div className="flex items-center gap-2">
                                                 <input type="checkbox" id="attunement" checked={data.attunement} onChange={(e) => handleChange('attunement', e.target.checked)} className="w-4 h-4 accent-purple-500 cursor-pointer" />
                                                 <label htmlFor="attunement" className="text-sm text-gray-300 cursor-pointer select-none">Requires Attunement</label>
                                             </div>
 
+                                            {/* --- WEAPON SPECIFIC FIELDS --- */}
+                                            {data.type === 'Weapon' && (
+                                                <div className="bg-gray-900/50 p-3 rounded border border-purple-500/30 space-y-3">
+                                                    <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest border-b border-purple-500/20 pb-1">Weapon Stats</h4>
+                                                    
+                                                    {/* Row 1: Damage + Damage Type */}
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Damage</label>
+                                                            <input type="text" value={data.damage} onChange={(e) => handleChange('damage', e.target.value)} placeholder="e.g. 1d8" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Damage Type</label>
+                                                            <input type="text" value={data.damageType} onChange={(e) => handleChange('damageType', e.target.value)} placeholder="e.g. Slashing" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Row 2: Weapon Category + Mastery (NYT) */}
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Weapon Category</label>
+                                                            <input type="text" value={data.weaponCategory} onChange={(e) => handleChange('weaponCategory', e.target.value)} placeholder="e.g. Martial Melee" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-purple-400 uppercase mb-1">Mastery Property</label>
+                                                            <input type="text" value={data.mastery} onChange={(e) => handleChange('mastery', e.target.value)} placeholder="e.g. Vex, Nick" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Row 3: Properties */}
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Properties</label>
+                                                        <input type="text" value={data.properties} onChange={(e) => handleChange('properties', e.target.value)} placeholder="e.g. Versatile (1d10), Finesse" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* --- ARMOR / SHIELD SPECIFIC FIELDS --- */}
+                                            {(data.type === 'Armor' || data.type === 'Shield') && (
+                                                <div className="bg-gray-900/50 p-3 rounded border border-purple-500/30 space-y-3">
+                                                    <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest border-b border-purple-500/20 pb-1">Armor Stats</h4>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">AC</label>
+                                                            <input type="text" value={data.ac} onChange={(e) => handleChange('ac', e.target.value)} placeholder="14" className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Category</label>
+                                                            <select value={data.category} onChange={(e) => handleChange('category', e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded p-1.5 text-sm text-white focus:border-purple-500 outline-none">
+                                                                <option value="Light">Light Armor</option>
+                                                                <option value="Medium">Medium Armor</option>
+                                                                <option value="Heavy">Heavy Armor</option>
+                                                                <option value="Shield">Shield</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 pt-1">
+                                                        <input type="checkbox" id="stealthDis" checked={data.stealthDis} onChange={(e) => handleChange('stealthDis', e.target.checked)} className="w-4 h-4 accent-red-500 cursor-pointer" />
+                                                        <label htmlFor="stealthDis" className="text-sm text-gray-300 cursor-pointer select-none">Stealth Disadvantage</label>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* FLAVOR TEXT */}
                                             <div>
                                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Flavor Text / Description</label>
                                                 <textarea value={data.description} onChange={(e) => handleChange('description', e.target.value)} className="w-full h-24 bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-purple-500 outline-none resize-none" placeholder="General description..." />
                                             </div>
                                         </div>
 
+                                        {/* MECHANICS LIST */}
                                         <div className="space-y-2 pt-4 border-t border-gray-700">
                                             <div className="flex justify-between items-center">
                                                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Mechanics & Properties</h3>
@@ -281,7 +339,7 @@ const ItemStatBlockEditor = ({ initialData, onSave, onCancel }) => {
 
                     {/* RIGHT: PREVIEW */}
                     <div className="flex flex-col gap-4">
-                        <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4 relative h-fit">
+                        <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4 relative h-fit sticky top-4">
                             <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
                                 <h2 className="font-semibold text-gray-200 flex items-center gap-2"><Icon path={Icons.Text} /> Preview</h2>
                                 <button onClick={handleDownload} className="text-xs flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1.5 rounded transition-colors border border-gray-600">

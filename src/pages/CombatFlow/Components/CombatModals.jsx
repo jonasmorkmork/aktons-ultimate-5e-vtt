@@ -13,7 +13,6 @@ const CombatModals = ({ logic }) => {
         parserModalOpen, setParserModalOpen, parseText, setParseText,
         initModal, setInitModal, 
         
-        // Hent funktionerne fra logic
         executeRunPreset, handleImportSrdMonster, handleParseStatBlock
     } = logic;
 
@@ -68,8 +67,6 @@ const CombatModals = ({ logic }) => {
         setInitModal(null);
     };
 
-    // Navne til visning i Read-Only Shortcuts oversigt
-    // (Den redigerbare liste ligger inde i CombatSettingsModal)
     const friendlyNames = {
         NAV_DOWN: 'Move Down',
         NAV_UP: 'Move Up',
@@ -79,7 +76,8 @@ const CombatModals = ({ logic }) => {
         NOTE_EDIT: 'Edit Note',
         CONDITION_MENU: 'Conditions Menu',
         COMBAT_MODE: 'Toggle Combat Mode',
-        UNDO: 'Undo (Ctrl + ...)'
+        UNDO: 'Undo (Ctrl + ...)',
+        NEXT_TURN: 'Next Turn'
     };
 
     return (
@@ -87,7 +85,7 @@ const CombatModals = ({ logic }) => {
             {/* EXTERNAL: SETTINGS MODAL */}
             <CombatSettingsModal logic={logic} />
 
-            {/* INLINE: CONFIRM */}
+            {/* INLINE: CONFIRM MODAL */}
             {confirmDialog && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[150] p-4 animate-in fade-in" onClick={(e) => e.stopPropagation()}>
                     <div className="bg-slate-800 border border-slate-600 rounded-lg p-6 max-w-sm w-full shadow-2xl">
@@ -119,17 +117,16 @@ const CombatModals = ({ logic }) => {
                 </div>
             )}
 
-            {/* INLINE: SHORTCUTS (Read Only View - Dynamic) */}
+            {/* INLINE: SHORTCUTS */}
             {showShortcuts && !logic.showSettings && (
                 <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[130] p-4 animate-in fade-in" onClick={() => setShowShortcuts(false)}>
                     <div className="bg-slate-900 border border-slate-600 rounded-lg p-6 max-w-md w-full shadow-2xl relative" onClick={e => e.stopPropagation()}>
                         <button className="absolute top-2 right-2 text-slate-400 hover:text-white" onClick={() => setShowShortcuts(false)}><X size={16}/></button>
                         <h3 className="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2"><Keyboard size={20}/> Shortcuts</h3>
                         <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                            {/* Vi mapper over de faktiske shortcuts fra logic, så listen er korrekt */}
                             {logic.shortcuts && Object.entries(logic.shortcuts).map(([key, val]) => (
                                 <div key={key}>
-                                    <span className="text-cyan-400 font-bold uppercase">{val}</span>
+                                    <span className="text-cyan-400 font-bold uppercase">{val === ' ' ? 'Space' : val}</span>
                                     <br/>
                                     <span className="text-slate-400">{friendlyNames[key] || key}</span>
                                 </div>
@@ -169,9 +166,11 @@ const CombatModals = ({ logic }) => {
                                                 placeholder="Init" 
                                                 className="w-20 bg-slate-800 border border-slate-600 rounded p-2 text-center text-lg focus:border-blue-500 focus:outline-none placeholder-slate-600 text-white"
                                             />
+                                            {/* RETTET: Pre-fill med nuværende HP */}
                                             <input 
                                                 name={`hp-${p.id}-${i}`} 
                                                 type="number" 
+                                                defaultValue={p.hp} 
                                                 placeholder={`HP (${p.maxHp || '?'})`} 
                                                 className="w-24 bg-slate-800 border border-slate-600 rounded p-2 text-center text-lg focus:border-green-500 focus:outline-none placeholder-slate-600 text-white"
                                             />

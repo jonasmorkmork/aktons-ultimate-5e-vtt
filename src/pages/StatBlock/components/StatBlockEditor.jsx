@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { Icon, Icons } from './StatBlockIcons';
 import StatBlockDisplay from './StatBlockDisplay';
+import StatBlockMobileView from './StatBlockMobileView';
 
 // --- API SERVICE ---
 const searchMonsters = async (query) => {
@@ -36,7 +37,8 @@ const emptyData = {
 
 // --- MAIN EDITOR COMPONENT ---
 const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
-    const [mode, setMode] = useState('builder');
+    const [mode, setMode] = useState('builder'); // 'builder' | 'text' (Desktop Logic)
+    const [mobileTab, setMobileTab] = useState('builder'); // 'builder' | 'text' | 'view' (Mobile Logic)
     const [rawText, setRawText] = useState("");
     
     const [data, setData] = useState({ ...emptyData, ...initialData });
@@ -145,17 +147,11 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         
         // 2. Normalisering: Keywords til ny linje
         keywords.forEach(kw => {
-            // (?<!...) = Lookbehind: Match hvis ikke allerede ny linje
-            // Men vi gør det simpelt: Replace alle forekomster med \n + keyword
             const regex = new RegExp(`(?<!^|\\n)(\\b${kw}\\b)`, 'gi');
             normalized = normalized.replace(regex, '\n$1');
         });
 
         // 3. Normalisering: Sektions-headers til HELT EGEN linje
-        // ^ = Start af linje (multiline)
-        // \s* = Evt mellemrum
-        // (header...) = Capture headeren og alt efter den på linjen
-        // $ = Slut på linje
         sectionHeaders.forEach(kw => {
             const regex = new RegExp(`^\\s*(${kw}\\b.*)$`, 'gim'); // 'm' flag er vigtigt her!
             normalized = normalized.replace(regex, '\n$1\n');
@@ -207,11 +203,9 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         };
 
         const findIdx = (regex) => { 
-            // Vi leder efter en linje der matcher regexen helt (pga normaliseringen)
             return normalized.split('\n').findIndex(l => regex.test(l.trim())); 
         };
         
-        // Find linje-numre i stedet for tegn-indeks for bedre kontrol
         const rawLines = normalized.split('\n');
         
         const lineIndices = [
@@ -222,11 +216,9 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
             { k: 'legendary', i: findIdx(headersRegex.legendary) }
         ].filter(x => x.i !== -1).sort((a, b) => a.i - b.i);
 
-        // Traits fallback logic (Hvis Traits ikke har header, men kommer efter CR)
         if (!lineIndices.some(x => x.k === 'traits')) {
             const crIdx = rawLines.findIndex(l => headersRegex.statsEnd.test(l));
             if (crIdx !== -1) {
-                // Traits starter linjen efter CR, HVIS den linje er før første sektion
                 const traitsStartIdx = crIdx + 1;
                 const firstSectionIdx = lineIndices.length > 0 ? lineIndices[0].i : rawLines.length;
                 
@@ -242,12 +234,9 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
                 const cleanL = l.trim();
                 if (!cleanL) return;
                 
-                // Skip header linjen selv (hvis den sneg sig med)
                 if (Object.values(headersRegex).some(h => h.test(cleanL))) return;
 
                 const isSubProperty = /^(?:Hit|Miss|Fejlet|Success|Succes|Flavor|Note)[:.]/i.test(cleanL);
-                
-                // Regex: "1. Navn." eller "Navn:"
                 const nmMatch = cleanL.match(/^(?:\d+\.?\s*)?(.+?)(?::|\.)(?:\s|$)/);
                 
                 if (nmMatch && nmMatch[1].length < 60 && !isSubProperty) {
@@ -258,7 +247,6 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
                     if (res.length > 0) {
                         res[res.length - 1].desc += "\n" + cleanL;
                     } else {
-                        // Intro text
                         res.push({ name: "", desc: cleanL });
                     }
                 }
@@ -267,12 +255,9 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         };
 
         lineIndices.forEach((sec, i) => {
-            const startLine = sec.i; // Start linje (inklusiv header)
+            const startLine = sec.i; 
             const endLine = lineIndices[i + 1] ? lineIndices[i + 1].i : rawLines.length;
             
-            // Slice linjerne ud. 
-            // Hvis det er en eksplicit header (Actions etc), så skip den første linje.
-            // Hvis det er Traits fallback (ingen header), så tag alt.
             const hasExplicitHeader = Object.values(headersRegex).some(r => r.test(rawLines[startLine]));
             const chunkLines = rawLines.slice(hasExplicitHeader ? startLine + 1 : startLine, endLine);
             
@@ -282,17 +267,27 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         return newData;
     };
 
-    useEffect(() => { 
-        if (mode === 'text') { 
-            setData(prev => ({ 
-                ...parseInput(rawText), 
-                id: prev.id, 
-                folderId: prev.folderId 
-            })); 
-        } 
-    }, [rawText, mode]);
+    // --- DATA HANDLING ---
+    const handleSwitchMode = (newMode) => { 
+        if (newMode === 'text') { setRawText(generateText(data)); } 
+        setMode(newMode); 
+    };
 
-    const handleSwitchMode = (newMode) => { if (newMode === 'text') { setRawText(generateText(data)); } setMode(newMode); };
+    // Mobile Logic: Sync data when changing tabs
+    const handleMobileTabChange = (tab) => {
+        // Hvis vi går FRA text editor, skal vi gemme teksten til data
+        if (mobileTab === 'text' && tab !== 'text') {
+            const parsed = parseInput(rawText);
+            setData(prev => ({ ...prev, ...parsed }));
+        }
+        
+        // Hvis vi går TIL text editor, skal vi generere teksten fra data
+        if (tab === 'text' && mobileTab !== 'text') {
+            setRawText(generateText(data));
+        }
+
+        setMobileTab(tab);
+    };
 
     const handleDataChange = (path, value) => {
         const newData = { ...data };
@@ -325,9 +320,100 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         setTimeout(() => setCopyFeedback(false), 2000);
     };
 
+    // --- REUSABLE BUILDER COMPONENT ---
+    const renderBuilderForm = () => (
+        <div className="space-y-6">
+            <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Basic Info</h3>
+                <div className="grid grid-cols-1 gap-3">
+                    <div><label className="text-xs text-gray-400 block mb-1">Name</label><input type="text" value={data.name} onChange={e => handleDataChange('name', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
+                    <div><label className="text-xs text-gray-400 block mb-1">Meta</label><input type="text" value={data.meta} onChange={e => handleDataChange('meta', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
+                </div>
+            </div>
+            <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Combat Stats</h3>
+                <div className="grid grid-cols-3 gap-3">
+                    <div><label className="text-xs text-gray-400 block mb-1">AC</label><input type="text" value={data.ac} onChange={e => handleDataChange('ac', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
+                    <div><label className="text-xs text-gray-400 block mb-1">HP</label><input type="text" value={data.hp} onChange={e => handleDataChange('hp', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
+                    <div><label className="text-xs text-gray-400 block mb-1">Speed</label><input type="text" value={data.speed} onChange={e => handleDataChange('speed', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
+                </div>
+            </div>
+            <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Stats</h3>
+                <div className="grid grid-cols-6 gap-1">
+                    {Object.keys(data.stats).map(key => (<div key={key} className="text-center"><label className="text-[10px] text-gray-400 block mb-1">{key}</label><input type="number" value={data.stats[key].val} onChange={e => handleStatChange(key, e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-1 text-center text-sm" /></div>))}
+                </div>
+            </div>
+            <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Properties</h3>
+                {Object.keys(data.props).map(key => (<div key={key}><label className="text-xs text-gray-400 block mb-1 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</label><input type="text" value={data.props[key]} onChange={e => handleDataChange(`props.${key}`, e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>))}
+            </div>
+            <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Traits & Actions</h3>
+                {[{k:'traits',t:'Traits'}, {k:'actions',t:'Actions'}, {k:'bonusActions',t:'Bonus'}, {k:'reactions',t:'Reactions'}, {k:'legendary',t:'Legendary'}].map(sec => (
+                    <div key={sec.k} className="space-y-2">
+                        <div className="flex justify-between items-center"><h4 className="text-xs text-gray-400">{sec.t}</h4><button onClick={() => addListItem(sec.k)} className="text-xs text-red-500"><Icon path={Icons.Plus} className="w-3 h-3"/> Add</button></div>
+                        {data[sec.k].map((item, idx) => (
+                            <div key={idx} className="bg-gray-900 border border-gray-700 rounded p-2 relative group">
+                                <div className="flex justify-between mb-1">
+                                    <input type="text" value={item.name} onChange={e=>handleListChange(sec.k,idx,'name',e.target.value)} className="bg-transparent font-bold text-gray-200 w-3/4 text-sm outline-none" placeholder="Name"/>
+                                    <button onClick={()=>removeListItem(sec.k,idx)} className="text-gray-600 hover:text-red-500"><Icon path={Icons.Trash} className="w-3 h-3"/></button>
+                                </div>
+                                <textarea value={item.desc} onChange={e=>handleListChange(sec.k,idx,'desc',e.target.value)} className="bg-transparent text-gray-400 w-full text-xs h-12 outline-none resize-none" placeholder="Description"/>
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-200 p-4 md:p-8 font-sans-dnd">
-            <div className="max-w-7xl mx-auto">
+        <div className="min-h-screen bg-gray-900 text-gray-200 p-0 md:p-8 font-sans-dnd">
+            
+            {/* --- MOBILE VIEW --- */}
+            <div className="flex md:hidden flex-col h-screen">
+                {/* Header */}
+                <div className="flex justify-between items-center p-3 bg-gray-800 border-b border-gray-700 shrink-0">
+                    <button onClick={onCancel} className="text-gray-400 hover:text-white flex items-center gap-1">
+                        <Icon path={Icons.ArrowLeft} className="w-5 h-5"/> Back
+                    </button>
+                    <button onClick={() => onSave(data)} className="text-green-500 font-bold flex items-center gap-1">
+                        <Icon path={Icons.Save} className="w-5 h-5"/> Save
+                    </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex border-b border-gray-700 bg-gray-800 shrink-0">
+                    <button onClick={() => handleMobileTabChange('builder')} className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${mobileTab === 'builder' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400'}`}>Visual Builder</button>
+                    <button onClick={() => handleMobileTabChange('text')} className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${mobileTab === 'text' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400'}`}>Text Editor</button>
+                    <button onClick={() => handleMobileTabChange('view')} className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${mobileTab === 'view' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400'}`}>Preview</button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto bg-gray-900">
+                    {mobileTab === 'builder' && (
+                        <div className="p-4 pb-20">
+                            {renderBuilderForm()}
+                        </div>
+                    )}
+                    {mobileTab === 'text' && (
+                        <textarea 
+                            value={rawText} 
+                            onChange={(e) => setRawText(e.target.value)} 
+                            className="w-full h-full p-4 bg-gray-900 text-gray-200 font-mono text-sm outline-none resize-none" 
+                            placeholder="Paste stat block..." 
+                        />
+                    )}
+                    {mobileTab === 'view' && (
+                        <StatBlockMobileView data={data} />
+                    )}
+                </div>
+            </div>
+
+
+            {/* --- DESKTOP VIEW --- */}
+            <div className="hidden md:block max-w-7xl mx-auto">
                 <div className="mb-6 flex justify-between items-center bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-md">
                     <div className="flex items-center gap-4">
                         <button onClick={onCancel} className="text-gray-400 hover:text-white flex items-center gap-2 transition-colors">
@@ -367,52 +453,7 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
                             <div className="flex-1 overflow-y-auto p-4">
                                 {mode === 'text' ? (
                                     <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="w-full h-full p-4 border border-gray-600 bg-gray-900 text-gray-200 rounded-md font-mono text-sm focus:ring-2 focus:ring-red-500 outline-none resize-none" placeholder="Paste stat block..." spellCheck="false" />
-                                ) : (
-                                    <div className="space-y-6">
-                                        <div className="space-y-3">
-                                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Basic Info</h3>
-                                            <div className="grid grid-cols-1 gap-3">
-                                                <div><label className="text-xs text-gray-400 block mb-1">Name</label><input type="text" value={data.name} onChange={e => handleDataChange('name', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
-                                                <div><label className="text-xs text-gray-400 block mb-1">Meta</label><input type="text" value={data.meta} onChange={e => handleDataChange('meta', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-3">
-                                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Combat Stats</h3>
-                                            <div className="grid grid-cols-3 gap-3">
-                                                <div><label className="text-xs text-gray-400 block mb-1">AC</label><input type="text" value={data.ac} onChange={e => handleDataChange('ac', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
-                                                <div><label className="text-xs text-gray-400 block mb-1">HP</label><input type="text" value={data.hp} onChange={e => handleDataChange('hp', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
-                                                <div><label className="text-xs text-gray-400 block mb-1">Speed</label><input type="text" value={data.speed} onChange={e => handleDataChange('speed', e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-3">
-                                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Stats</h3>
-                                            <div className="grid grid-cols-6 gap-1">
-                                                {Object.keys(data.stats).map(key => (<div key={key} className="text-center"><label className="text-[10px] text-gray-400 block mb-1">{key}</label><input type="number" value={data.stats[key].val} onChange={e => handleStatChange(key, e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-1 text-center text-sm" /></div>))}
-                                            </div>
-                                        </div>
-                                        <div className="space-y-3">
-                                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Properties</h3>
-                                            {Object.keys(data.props).map(key => (<div key={key}><label className="text-xs text-gray-400 block mb-1 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</label><input type="text" value={data.props[key]} onChange={e => handleDataChange(`props.${key}`, e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-red-500 outline-none" /></div>))}
-                                        </div>
-                                        <div className="space-y-3">
-                                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-1">Traits & Actions</h3>
-                                            {[{k:'traits',t:'Traits'}, {k:'actions',t:'Actions'}, {k:'bonusActions',t:'Bonus'}, {k:'reactions',t:'Reactions'}, {k:'legendary',t:'Legendary'}].map(sec => (
-                                                <div key={sec.k} className="space-y-2">
-                                                    <div className="flex justify-between items-center"><h4 className="text-xs text-gray-400">{sec.t}</h4><button onClick={() => addListItem(sec.k)} className="text-xs text-red-500"><Icon path={Icons.Plus} className="w-3 h-3"/> Add</button></div>
-                                                    {data[sec.k].map((item, idx) => (
-                                                        <div key={idx} className="bg-gray-900 border border-gray-700 rounded p-2 relative group">
-                                                            <div className="flex justify-between mb-1">
-                                                                <input type="text" value={item.name} onChange={e=>handleListChange(sec.k,idx,'name',e.target.value)} className="bg-transparent font-bold text-gray-200 w-3/4 text-sm outline-none" placeholder="Name"/>
-                                                                <button onClick={()=>removeListItem(sec.k,idx)} className="text-gray-600 hover:text-red-500"><Icon path={Icons.Trash} className="w-3 h-3"/></button>
-                                                            </div>
-                                                            <textarea value={item.desc} onChange={e=>handleListChange(sec.k,idx,'desc',e.target.value)} className="bg-transparent text-gray-400 w-full text-xs h-12 outline-none resize-none" placeholder="Description"/>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
+                                ) : renderBuilderForm()}
                             </div>
                         </div>
                     </div>

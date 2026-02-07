@@ -142,7 +142,6 @@ export const useBattlefieldLogic = (session, maps, tokenLibrary, onSave, onAddTo
                 return;
             }
             if (isCreatingFog && fogTool === 'poly' && type === 'map') {
-                // RETTELSE: Fjernet snapToCell herfra
                 let px = worldX; 
                 let py = worldY;
                 
@@ -223,7 +222,7 @@ export const useBattlefieldLogic = (session, maps, tokenLibrary, onSave, onAddTo
         const currentX = (e.clientX - rect.left - pan.x) / zoom;
         const currentY = (e.clientY - rect.top - pan.y) / zoom;
 
-        // Update Fog Rect (RETTELSE: Ingen snap her heller)
+        // Update Fog Rect
         if (stateRef.current.fogEnabled && isCreatingFog && fogTool === 'rect' && dragFogStart) {
             let x1 = dragFogStart.x; 
             let y1 = dragFogStart.y;
@@ -233,7 +232,7 @@ export const useBattlefieldLogic = (session, maps, tokenLibrary, onSave, onAddTo
             setCurrentFogRect({ x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
         }
 
-        // Poly line preview (RETTELSE: Ingen snap her heller)
+        // Poly line preview
         if (stateRef.current.fogEnabled && isCreatingFog && fogTool === 'poly' && currentPolyPoints.length > 0) {
             let px = currentX;
             let py = currentY;
@@ -379,29 +378,45 @@ export const useBattlefieldLogic = (session, maps, tokenLibrary, onSave, onAddTo
     }, [tokens, spellTemplates, activeGridSettings, fogEnabled, layers, activeLayerId, fogBoxes, onSave]);
 
 
-    // --- Multi-Move & Tethered Templates ---
-    const updateTokenPosition = (id, x, y) => {
+    // --- UPDATE TOKEN (MOVED TO GENERIC UPDATE) ---
+    const updateToken = (id, changes) => {
         const originToken = tokens.find(t => t.id === id);
         if (!originToken) return;
 
-        const dx = x - originToken.x;
-        const dy = y - originToken.y;
+        const dx = (changes.x !== undefined ? changes.x : originToken.x) - originToken.x;
+        const dy = (changes.y !== undefined ? changes.y : originToken.y) - originToken.y;
 
         const targets = selectedTokenIds.has(id) ? selectedTokenIds : new Set([id]);
 
         setTokens(prev => prev.map(t => {
             if (targets.has(t.id)) {
-                return { ...t, x: t.x + dx, y: t.y + dy };
+                let updatedToken = { ...t };
+                
+                // Position
+                if (changes.x !== undefined || changes.y !== undefined) {
+                    updatedToken.x += dx;
+                    updatedToken.y += dy;
+                }
+
+                // Size (KUN hvis specifikt angivet, dvs. fra slideren)
+                if (changes.size !== undefined) {
+                    updatedToken.size = changes.size;
+                }
+
+                return updatedToken;
             }
             return t;
         }));
 
-        setSpellTemplates(prev => prev.map(t => {
-            if (t.originTokenId && targets.has(t.originTokenId)) {
-                return { ...t, x: t.x + dx, y: t.y + dy };
-            }
-            return t;
-        }));
+        // Move Templates
+        if (changes.x !== undefined || changes.y !== undefined) {
+            setSpellTemplates(prev => prev.map(t => {
+                if (t.originTokenId && targets.has(t.originTokenId)) {
+                    return { ...t, x: t.x + dx, y: t.y + dy };
+                }
+                return t;
+            }));
+        }
     };
 
     const updateTemplatePosition = (id, x, y) => {
@@ -411,6 +426,7 @@ export const useBattlefieldLogic = (session, maps, tokenLibrary, onSave, onAddTo
     };
     const updateTemplate = (id, newAttrs) => { setSpellTemplates(prev => prev.map(t => t.id === id ? { ...t, ...newAttrs } : t)); };
     const updateFogBox = (id, newAttrs) => { setFogBoxes(prev => prev.map(b => b.id === id ? { ...b, ...newAttrs } : b)); };
+    
     const addTokenFromLibrary = (libToken, dropX = null, dropY = null) => {
         let targetX, targetY;
         const rect = boardRef.current ? boardRef.current.getBoundingClientRect() : { left: 0, top: 0 };
@@ -434,6 +450,16 @@ export const useBattlefieldLogic = (session, maps, tokenLibrary, onSave, onAddTo
         setZoom(clampedScale); setPan({ x: pointer.x - mousePointTo.x * clampedScale, y: pointer.y - mousePointTo.y * clampedScale });
     };
 
+    // Helper: Find first selected token for UI control
+    // Dette er den vigtige del, du manglede!
+    const selectedToken = useMemo(() => {
+        if (selectedTokenIds.size === 1) {
+            const id = Array.from(selectedTokenIds)[0];
+            return tokens.find(t => t.id === id);
+        }
+        return null;
+    }, [selectedTokenIds, tokens]);
+
     return useMemo(() => ({
         layers, setLayers, activeLayerId, setActiveLayerId, activeLayer,
         tokens, setTokens, spellTemplates, setSpellTemplates,
@@ -455,7 +481,9 @@ export const useBattlefieldLogic = (session, maps, tokenLibrary, onSave, onAddTo
         generateId, snapToCell, handleWheel,
         addTokenFromLibrary, handleMapDrop, handleMapDragOver,
         handleMouseDown, handleMouseMove, handleMouseUp,
-        updateTokenPosition, updateTemplatePosition, updateFogBox, setSelectedTokenIds
+        updateToken, // OBS: Opdateret funktion
+        updateTemplatePosition, updateFogBox, setSelectedTokenIds,
+        selectedToken // OBS: Denne eksporteres nu korrekt
     }), [
         layers, activeLayerId, activeLayer, activeGridSettings,
         tokens, spellTemplates, pan, zoom, history,

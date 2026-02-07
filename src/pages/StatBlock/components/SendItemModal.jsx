@@ -1,38 +1,72 @@
 import React, { useState } from 'react';
-import { useCampaign } from '../context/CampaignContext'; // Tjek at stien passer til din CampaignContext
-import { Icons } from './CharacterIcons'; // Tjek at stien passer til dine ikoner
+import { useCampaign } from '../../../context/CampaignContext'; 
+
+// --- LOKALE IKONER ---
+const Icons = {
+    Gem: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 3h12l4 6-10 13L2 9Z" />
+            <path d="M11 3 8 9l4 13 4-13-3-6" />
+        </svg>
+    ),
+    X: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+        </svg>
+    ),
+    Bag: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+            <path d="M3 6h18" />
+            <path d="M16 10a4 4 0 0 1-8 0" />
+        </svg>
+    ),
+    PaperPlane: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+    )
+};
 
 const SendItemModal = ({ show, onClose, item }) => {
     const { campaignData, sendItemToCharacter } = useCampaign();
-    const [selectedCharId, setSelectedCharId] = useState("");
+    // Vi gemmer nu hele spiller-objektet i state for at få adgang til både UID og CharID
+    const [selectedPlayer, setSelectedPlayer] = useState(null); 
     const [isSending, setIsSending] = useState(false);
     const [statusMsg, setStatusMsg] = useState(null);
 
     if (!show || !item) return null;
 
     // Vi finder listen af spillere fra kampagnen
-    // Forudsætter at campaignData.players er et array af objekter: { uid, displayName, characterId, characterName }
-    // Hvis din struktur er anderledes, skal dette måske tilpasses
-    const players = campaignData?.players || [];
-    const validPlayers = players.filter(p => p.characterId); // Kun dem der har en character connected
+    const playerMap = campaignData?.playerCharacters || {};
+    
+    // Vi omdanner objektet til et array vi kan bruge
+    const validPlayers = Object.entries(playerMap).map(([uid, charData]) => ({
+        uid: uid,
+        characterId: charData.id,
+        characterName: charData.name,
+        level: charData.level
+    }));
 
     const handleSend = async () => {
-        if (!selectedCharId) return;
+        if (!selectedPlayer) return;
         
         setIsSending(true);
         setStatusMsg(null);
 
-        const result = await sendItemToCharacter(selectedCharId, item);
+        // RETTELSE HER: Vi fjerner .characterId, så 'item' bliver det 2. argument
+        const result = await sendItemToCharacter(selectedPlayer.uid, item);
         
         setIsSending(false);
         
         if (result.success) {
-            // Vis succes besked kortvarigt og luk
             setStatusMsg({ type: 'success', text: result.message });
             setTimeout(() => {
                 setStatusMsg(null);
                 onClose();
-                setSelectedCharId(""); // Reset
+                setSelectedPlayer(null); // Reset
             }, 1500);
         } else {
             setStatusMsg({ type: 'error', text: result.message });
@@ -49,9 +83,9 @@ const SendItemModal = ({ show, onClose, item }) => {
                 {/* Header */}
                 <div className="p-4 border-b border-zinc-800 bg-zinc-900 flex justify-between items-center">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-widest">
-                        <span className="text-purple-500"><Icons.Gem /></span> Send Item
+                        <span className="text-purple-500">{Icons.Gem}</span> Send Item
                     </h3>
-                    <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><Icons.X /></button>
+                    <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors">{Icons.X}</button>
                 </div>
 
                 {/* Content */}
@@ -60,7 +94,7 @@ const SendItemModal = ({ show, onClose, item }) => {
                     {/* Item Preview */}
                     <div className="bg-black/40 border border-zinc-800 rounded-lg p-3 flex items-start gap-3">
                         <div className="bg-zinc-800 p-2 rounded text-zinc-400">
-                            <Icons.Bag /> {/* Eller et andet generisk item ikon */}
+                            {Icons.Bag}
                         </div>
                         <div>
                             <div className="text-sm font-bold text-zinc-200">{item.name}</div>
@@ -77,19 +111,20 @@ const SendItemModal = ({ show, onClose, item }) => {
                                 {validPlayers.map(p => (
                                     <button
                                         key={p.characterId}
-                                        onClick={() => setSelectedCharId(p.characterId)}
-                                        className={`w-full flex items-center justify-between p-2 rounded border transition-all ${selectedCharId === p.characterId 
+                                        onClick={() => setSelectedPlayer(p)}
+                                        className={`w-full flex items-center justify-between p-2 rounded border transition-all ${selectedPlayer?.characterId === p.characterId 
                                             ? 'bg-purple-900/30 border-purple-500 text-white' 
                                             : 'bg-black/20 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:border-zinc-600'}`}
                                     >
                                         <span className="text-xs font-bold">{p.characterName || "Unknown Character"}</span>
-                                        <span className="text-[9px] uppercase tracking-wider opacity-50">{p.displayName}</span>
+                                        <span className="text-[9px] uppercase tracking-wider opacity-50">Lvl {p.level || "?"}</span>
                                     </button>
                                 ))}
                             </div>
                         ) : (
                             <div className="p-3 text-center text-xs text-zinc-500 italic border border-dashed border-zinc-800 rounded">
-                                No players found in campaign.
+                                No players found in campaign. <br/>
+                                <span className="text-[10px] opacity-70">(Make sure a player has joined & assigned a character)</span>
                             </div>
                         )}
                     </div>
@@ -114,10 +149,10 @@ const SendItemModal = ({ show, onClose, item }) => {
                     </button>
                     <button 
                         onClick={handleSend} 
-                        disabled={!selectedCharId || isSending}
-                        className={`px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded shadow-lg transition-all text-xs uppercase tracking-wide flex items-center gap-2 ${(!selectedCharId || isSending) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        disabled={!selectedPlayer || isSending}
+                        className={`px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded shadow-lg transition-all text-xs uppercase tracking-wide flex items-center gap-2 ${(!selectedPlayer || isSending) ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                        {isSending ? 'Sending...' : <><Icons.PaperPlane /> Send Item</>}
+                        {isSending ? 'Sending...' : <>{Icons.PaperPlane} Send Item</>}
                     </button>
                 </div>
             </div>

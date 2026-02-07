@@ -1,16 +1,47 @@
 import React, { useState } from 'react';
 import { Icons } from '../CharacterIcons';
 import { THEMES } from './ThemeConfig';
-import ThemeEditorModal from './ThemeEditorModal'; // Ny import
+import ThemeEditorModal from './ThemeEditorModal'; 
+import { useCampaign } from '../../../../context/CampaignContext'; 
 
 const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, onOpenMessage, theme }) => {
     const [showThemeMenu, setShowThemeMenu] = useState(false);
-    const [showEditor, setShowEditor] = useState(false); // Ny state
+    const [showEditor, setShowEditor] = useState(false); 
     const handleChange = (field, value) => onUpdate({ [field]: value });
+
+    // Hent sync funktion
+    const { syncHpToCombat } = useCampaign();
+
+    // LONG REST LOGIK
+    const handleLongRestTrigger = () => {
+        // 1. Reset HP
+        const maxHp = parseInt(c.hp?.max || 10);
+        const newHp = { 
+            ...c.hp, 
+            current: maxHp, 
+            temp: 0 
+        };
+        
+        // 2. Reset Hit Dice (spent = 0 betyder alle er tilgængelige)
+        const newHitDice = { 
+            ...c.hitDice, 
+            spent: 0 
+        };
+        
+        // 3. Opdater Character Sheet
+        onUpdate({ hp: newHp, hitDice: newHitDice });
+        
+        // 4. Sync til DM Combat
+        if (syncHpToCombat) {
+            syncHpToCombat(maxHp, maxHp, 0);
+        }
+        
+        // 5. Kald original prop hvis nødvendigt (f.eks. for notifikationer)
+        if (onLongRest) onLongRest(); 
+    };
 
     return (
         <>
-            {/* Modal placeres her udenfor hoved-div */}
             <ThemeEditorModal 
                 show={showEditor} 
                 onClose={() => setShowEditor(false)} 
@@ -20,7 +51,6 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
 
             <div className={`relative z-[100] flex flex-wrap items-center justify-between gap-3 ${theme.bgPanel} border ${theme.border} p-3 rounded-xl shadow-lg transition-colors duration-300`}>
                 
-                {/* Venstre side er uændret... */}
                 <div className="flex items-center gap-3">
                     <button onClick={onBack} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
                         <Icons.ArrowLeft /> Back
@@ -34,7 +64,6 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
                 
                 <div className="flex items-center gap-2">
                     
-                    {/* THEME SELECTOR + EDIT BUTTON */}
                     <div className="relative flex gap-1">
                         <button 
                             onClick={() => setShowThemeMenu(!showThemeMenu)}
@@ -43,7 +72,6 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
                            Theme
                         </button>
                         
-                        {/* Vis kun Edit knap hvis temaet er 'custom' */}
                         {c.theme === 'custom' && (
                             <button 
                                 onClick={() => setShowEditor(true)}
@@ -75,8 +103,7 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
 
                     <div className={`h-6 w-px ${theme.border}`}></div>
 
-                    {/* Resten af knapperne er uændret... */}
-                    <button onClick={onLongRest} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
+                    <button onClick={handleLongRestTrigger} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
                         <Icons.Moon /> Long Rest
                     </button>
 

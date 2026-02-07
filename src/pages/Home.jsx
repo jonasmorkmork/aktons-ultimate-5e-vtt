@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const ToolCard = ({ to, title, desc, icon, colorClass, bgColor }) => (
@@ -26,7 +26,8 @@ const ToolCard = ({ to, title, desc, icon, colorClass, bgColor }) => (
 );
 
 const Home = () => {
-  const { currentUser, googleLogin, logout } = useAuth();
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <div className="flex flex-col items-center min-h-screen p-6 bg-[#0f172a] text-slate-200">
@@ -47,7 +48,7 @@ const Home = () => {
                     {currentUser.photoURL ? (
                         <img src={currentUser.photoURL} alt="Profile" className="w-10 h-10 rounded-full border-2 border-emerald-500" />
                     ) : (
-                        <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-white">
+                        <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-white select-none">
                             {currentUser.email ? currentUser.email[0].toUpperCase() : 'U'}
                         </div>
                     )}
@@ -64,13 +65,10 @@ const Home = () => {
                 </div>
             ) : (
                 <button 
-                    onClick={googleLogin} 
+                    onClick={() => navigate('/login')} 
                     className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition-all hover:scale-105 hover:shadow-blue-900/20"
                 >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
-                    </svg>
-                    Log In with Google
+                    Log In / Sign Up
                 </button>
             )}
         </div>
@@ -78,7 +76,7 @@ const Home = () => {
 
       <main className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl w-full">
 
-        {/* Campaign Manager (NY) */}
+        {/* Campaign Manager */}
         <ToolCard 
           to="/campaigns"
           title="Campaign Manager"
@@ -96,6 +94,16 @@ const Home = () => {
           colorClass="hover:border-red-800"
           bgColor="bg-red-900/10"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
+        />
+
+        {/* NOTES (NY) */}
+        <ToolCard 
+          to="/notes"
+          title="Personal Notes"
+          desc="Your private campaign journals, world-building wiki, and session notes."
+          colorClass="hover:border-emerald-700"
+          bgColor="bg-emerald-900/10"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>}
         />
 
         {/* Combat Flow */}

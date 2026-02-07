@@ -63,6 +63,9 @@ const CustomColorControl = ({ label, value, onChange }) => {
 };
 
 const ThemeEditorModal = ({ show, onClose, customTheme, onUpdate }) => {
+    // State til Drag n Drop feedback
+    const [isDragging, setIsDragging] = useState(false);
+
     if (!show) return null;
 
     const defaults = {
@@ -87,11 +90,50 @@ const ThemeEditorModal = ({ show, onClose, customTheme, onUpdate }) => {
 
     const handleImageUpload = (e) => {
         const file = e.target.files[0];
+        processFile(file);
+    };
+
+    const processFile = (file) => {
         if (!file) return;
         if (file.size > 5 * 1024 * 1024) { alert("Image max 5MB"); return; }
         const reader = new FileReader();
         reader.onload = (event) => handleUpdate('bgImage', event.target.result);
         reader.readAsDataURL(file);
+    };
+
+    // --- DRAG N DROP HANDLERS ---
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
+        // Tjek for filer først (Drag fra desktop)
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            const file = files[0];
+            if (file.type.startsWith('image/')) {
+                processFile(file);
+            }
+            return;
+        }
+
+        // Tjek for URL (Drag fra browser)
+        const imageUrl = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+        if (imageUrl) {
+            handleUpdate('bgImage', imageUrl);
+        }
     };
 
     return (
@@ -111,15 +153,13 @@ const ThemeEditorModal = ({ show, onClose, customTheme, onUpdate }) => {
                     {/* --- LIVE PREVIEW BOX --- */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Live Preview</label>
-                        {/* Container der simulerer baggrunden (hvis billede er valgt) */}
                         <div 
                             className="p-4 rounded-xl border border-dashed border-zinc-800 bg-cover bg-center transition-all"
                             style={{ 
                                 backgroundImage: current.bgImage ? `url(${current.bgImage})` : 'none',
-                                backgroundColor: '#000' // Fallback
+                                backgroundColor: '#000' 
                             }}
                         >
-                            {/* Simuleret Character Sheet Component */}
                             <div 
                                 className="border rounded-xl p-4 shadow-lg transition-colors duration-200"
                                 style={{ 
@@ -145,7 +185,6 @@ const ThemeEditorModal = ({ show, onClose, customTheme, onUpdate }) => {
                                         <span style={{ color: current.subText }}>Athletics</span>
                                         <span className="font-bold" style={{ color: current.text }}>+5</span>
                                     </div>
-                                    {/* Fake Input Line */}
                                     <div className="mt-3 pt-2 border-t" style={{ borderColor: current.border }}>
                                         <div className="text-[9px] font-bold uppercase mb-1" style={{ color: current.subText }}>Notes</div>
                                         <div className="h-2 w-3/4 rounded bg-black/10" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}></div>
@@ -166,21 +205,35 @@ const ThemeEditorModal = ({ show, onClose, customTheme, onUpdate }) => {
                         </div>
                     </div>
 
-                    {/* Background Image */}
+                    {/* Background Image (DRAG N DROP AREA) */}
                     <div className="space-y-2 pt-4 border-t border-zinc-800">
                         <label className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Background Image</label>
-                        <div className={`relative h-24 rounded-lg border-2 border-dashed ${current.bgImage ? 'border-purple-500/50' : 'border-zinc-800'} bg-black/40 overflow-hidden group hover:border-zinc-600 transition-colors`}>
+                        <div 
+                            className={`relative h-32 rounded-lg border-2 border-dashed transition-all bg-black/40 overflow-hidden group 
+                                ${isDragging ? 'border-emerald-500 bg-emerald-900/20 scale-[1.02]' : (current.bgImage ? 'border-purple-500/50' : 'border-zinc-800 hover:border-zinc-600')}
+                            `}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                        >
                             {current.bgImage ? (
                                 <>
                                     <img src={current.bgImage} alt="Bg" className="w-full h-full object-cover opacity-60" />
-                                    <button onClick={() => handleUpdate('bgImage', null)} className="absolute top-2 right-2 bg-red-600/80 text-white p-1.5 rounded shadow hover:bg-red-600"><Icons.Trash /></button>
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <span className="text-xs font-bold text-white">Drag new image here to replace</span>
+                                    </div>
+                                    <button onClick={() => handleUpdate('bgImage', null)} className="absolute top-2 right-2 bg-red-600/80 text-white p-1.5 rounded shadow hover:bg-red-600 z-10"><Icons.Trash /></button>
                                 </>
                             ) : (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600">
-                                    <Icons.Image className="w-6 h-6 mb-2 opacity-50" />
-                                    <span className="text-[10px] font-bold uppercase">Click to upload</span>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600 pointer-events-none">
+                                    <Icons.Image className={`w-8 h-8 mb-2 transition-colors ${isDragging ? 'text-emerald-500' : 'opacity-50'}`} />
+                                    <span className={`text-[10px] font-bold uppercase transition-colors ${isDragging ? 'text-emerald-400' : ''}`}>
+                                        {isDragging ? "Drop Image Here!" : "Click or Drag Image Here"}
+                                    </span>
                                 </div>
                             )}
+                            
+                            {/* Input ligger over det hele for at fange klik, men under knapper */}
                             <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                         </div>
                     </div>

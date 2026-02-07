@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { Icons, ProficiencyButton } from '../CharacterIcons'; 
 import { getMod, formatMod, getProfBonus, conditionOptions, getTabTitle } from '../CharacterHelpers'; 
+import { useCampaign } from '../../../../context/CampaignContext'; 
 
 const SheetCombat = ({ c, onUpdate, theme }) => {
     const [editingHp, setEditingHp] = useState(null);
     const [hpInputValue, setHpInputValue] = useState("");
     const [activeResTab, setActiveResTab] = useState('resistances');
-    
     const [showCondMenu, setShowCondMenu] = useState(false);
+
+    const { syncHpToCombat } = useCampaign();
 
     const prof = getProfBonus(c.level);
     const dMod = getMod(c.stats.dexterity);
@@ -29,6 +31,7 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
     const applyHpChange = (actionType) => {
         const amount = parseInt(hpInputValue) || 0;
         let newHp = { ...c.hp };
+        
         if (editingHp === 'current') {
             if (actionType === 'dmg') {
                 let rem = amount;
@@ -38,13 +41,17 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
                     rem -= abs;
                 }
                 newHp.current = Math.max(0, newHp.current - rem);
-            } else if (actionType === 'heal') newHp.current = Math.min(newHp.max, newHp.current + amount);
-            else if (actionType === 'set') newHp.current = Math.min(newHp.max, amount);
+            } else if (actionType === 'heal') {
+                newHp.current = Math.min(newHp.max, newHp.current + amount);
+            }
         } else if (editingHp === 'temp') {
             if (actionType === 'dmg') newHp.temp = Math.max(0, newHp.temp - amount);
-            else newHp.temp = amount;
+            else if (actionType === 'set') newHp.temp = amount;
         }
+        
         onUpdate({ hp: newHp });
+        if (syncHpToCombat) syncHpToCombat(newHp.current, newHp.max, newHp.temp);
+
         setEditingHp(null);
         setHpInputValue("");
     };
@@ -83,7 +90,10 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
 
             {/* HP */}
             <div className={`${theme.bgPanel} border ${theme.border} rounded-xl p-4 shadow-lg space-y-4`}>
-                <div className="flex justify-between items-center"><div className="flex items-center gap-2"><div className={theme.accentText}><Icons.Heart /></div><span className={`font-bold uppercase text-xs ${theme.subText} tracking-widest`}>Health (HP)</span></div><div className={`flex items-center gap-2 text-[10px] ${theme.subText} font-bold`}>MAX: <input type="number" value={c.hp.max} onChange={(e) => handleNestedChange('hp', 'max', parseInt(e.target.value)||0)} className={`w-12 bg-black/20 rounded px-1 text-center font-bold ${theme.accentText} outline-none border ${theme.border} shadow-inner`} /></div></div>
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2"><div className={theme.accentText}><Icons.Heart /></div><span className={`font-bold uppercase text-xs ${theme.subText} tracking-widest`}>Health (HP)</span></div>
+                    <div className={`flex items-center gap-2 text-[10px] ${theme.subText} font-bold`}>MAX: <input type="number" value={c.hp.max} onChange={(e) => handleNestedChange('hp', 'max', parseInt(e.target.value)||0)} className={`w-12 bg-black/20 rounded px-1 text-center font-bold ${theme.accentText} outline-none border ${theme.border} shadow-inner`} /></div>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                     {['current', 'temp'].map(type => {
                         const isActive = editingHp === type;
@@ -94,11 +104,19 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
                                     <div className="flex flex-col items-center gap-2 w-full px-1" onClick={e => e.stopPropagation()}>
                                             <input type="number" autoFocus placeholder="Val" value={hpInputValue} onChange={e => setHpInputValue(e.target.value)} className={`w-full bg-black/40 border ${theme.border} rounded text-center text-sm font-bold p-1.5 outline-none focus:${theme.accentBorder} ${theme.text}`} />
                                             <div className="grid grid-cols-2 gap-1 w-full">
-                                                <button onClick={() => applyHpChange('dmg')} className="bg-red-900/40 text-[7px] font-bold p-1 rounded border border-red-800 uppercase hover:bg-red-800 transition-colors text-white">Dmg</button>
-                                                <button onClick={() => applyHpChange('heal')} className="bg-green-900/40 text-[7px] font-bold p-1 rounded border border-green-800 uppercase hover:bg-green-800 transition-colors text-white">Heal</button>
-                                                <button onClick={() => applyHpChange('set')} className={`bg-zinc-800 text-[7px] font-bold p-1 rounded border ${theme.border} uppercase hover:bg-zinc-700 transition-colors text-white`}>Set</button>
-                                                <button onClick={() => setEditingHp(null)} className={`bg-zinc-950 text-[7px] font-bold p-1 rounded border ${theme.border} uppercase hover:bg-zinc-800 transition-colors text-white`}>X</button>
+                                                {type === 'current' ? (
+                                                    <>
+                                                        <button onClick={() => applyHpChange('dmg')} className="bg-red-900/40 text-[7px] font-bold p-1 rounded border border-red-800 uppercase hover:bg-red-800 transition-colors text-white">Dmg</button>
+                                                        <button onClick={() => applyHpChange('heal')} className="bg-green-900/40 text-[7px] font-bold p-1 rounded border border-green-800 uppercase hover:bg-green-800 transition-colors text-white">Heal</button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => applyHpChange('dmg')} className="bg-red-900/40 text-[7px] font-bold p-1 rounded border border-red-800 uppercase hover:bg-red-800 transition-colors text-white">Dmg</button>
+                                                        <button onClick={() => applyHpChange('set')} className={`bg-zinc-800 text-[7px] font-bold p-1 rounded border ${theme.border} uppercase hover:bg-zinc-700 transition-colors text-white`}>Set</button>
+                                                    </>
+                                                )}
                                             </div>
+                                            <button onClick={() => setEditingHp(null)} className={`w-full mt-1 bg-zinc-950 text-[7px] font-bold p-1 rounded border ${theme.border} uppercase hover:bg-zinc-800 transition-colors text-white`}>Cancel</button>
                                     </div>
                                 ) : (
                                     <div className={`text-3xl font-bold dnd-font ${type === 'current' ? theme.text : 'text-blue-400'}`}>{c.hp[type]}</div>
@@ -112,10 +130,66 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
             {/* Hit Dice & Conditions */}
             <div className={`${theme.bgPanel} border ${theme.border} rounded-xl p-4 shadow-lg space-y-4`}>
                 <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2"><label className={`block text-[8px] font-bold uppercase ${theme.subText} text-center tracking-tighter`}>Hit Dice</label><div className={`flex gap-1 items-center bg-black/20 border ${theme.border} rounded-lg p-1 shadow-inner`}><input type="number" value={c.hitDice.spent} onChange={(e) => handleNestedChange('hitDice', 'spent', parseInt(e.target.value)||0)} className={`w-1/2 bg-transparent text-center text-xs font-bold ${theme.accentText} outline-none`} /><span className={`${theme.subText} font-bold`}>/</span><input type="number" value={c.hitDice.total} onChange={(e) => handleNestedChange('hitDice', 'total', parseInt(e.target.value)||0)} className={`w-1/2 bg-transparent text-center text-xs font-bold ${theme.text} outline-none`} /></div></div>
-                    <div className="space-y-2"><label className={`block text-[8px] font-bold uppercase ${theme.subText} text-center tracking-tighter`}>Type</label><input spellCheck="false" type="text" value={c.hitDice.type} onChange={(e) => handleNestedChange('hitDice', 'type', e.target.value)} className={`w-full bg-black/20 border ${theme.border} rounded-lg p-2 text-center text-xs font-bold ${theme.accentText} outline-none shadow-inner`} placeholder="d10" /></div>
                     
-                    {/* EXHAUSTION FIX */}
+                    {/* HIT DICE: Combined Box (Col Span 2) */}
+                    <div className="col-span-2 space-y-2">
+                        <label className={`block text-[8px] font-bold uppercase ${theme.subText} text-center tracking-tighter`}>Hit Dice</label>
+                        <div className={`flex items-center bg-black/20 border ${theme.border} rounded-lg p-2 shadow-inner min-h-[60px]`}>
+                            
+                            {/* Left Side: Count & Squares */}
+                            <div className="flex-1 flex flex-col items-center border-r border-white/5 pr-2">
+                                <input 
+                                    type="number" 
+                                    value={c.hitDice.total || ""} 
+                                    onChange={(e) => handleNestedChange('hitDice', 'total', parseInt(e.target.value)||0)}
+                                    className={`w-12 bg-transparent text-center text-sm font-bold ${theme.text} outline-none border-b ${theme.border} mb-2 focus:${theme.accentBorder}`} 
+                                    placeholder="Max"
+                                />
+                                <div className="flex flex-wrap gap-1 justify-center max-w-[150px]">
+                                    {Array.from({ length: c.hitDice.total || 0 }).map((_, i) => {
+                                        // NY LOGIK: Vi viser "Brugte" terninger (spent) som farvede/røde.
+                                        const isSpent = i < (c.hitDice.spent || 0);
+
+                                        return (
+                                            <button 
+                                                key={i}
+                                                onClick={() => {
+                                                    if (isSpent) {
+                                                        // Hvis den allerede er "brugt" (rød), og man klikker, betyder det "fortryd/recover" (spent falder)
+                                                        handleNestedChange('hitDice', 'spent', Math.max(0, (c.hitDice.spent || 0) - 1));
+                                                    } else {
+                                                        // Hvis den er "ubrugt" (mørk), og man klikker, betyder det "brug" (spent stiger)
+                                                        handleNestedChange('hitDice', 'spent', Math.min(c.hitDice.total, (c.hitDice.spent || 0) + 1));
+                                                    }
+                                                }}
+                                                className={`w-3.5 h-3.5 rounded-[2px] border transition-all shadow-sm ${
+                                                    isSpent
+                                                        ? `${theme.accentBg} border-white/50 hover:brightness-110` // Brugt = Farvet (Rød)
+                                                        : `bg-slate-900 border-slate-700 hover:border-slate-500`   // Ubrugt = Mørk
+                                                }`}
+                                                title={isSpent ? "Recover Hit Die" : "Spend Hit Die"}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Right Side: Type */}
+                            <div className="w-1/3 flex flex-col items-center justify-center pl-2">
+                                <label className={`text-[7px] font-bold uppercase ${theme.subText} mb-1`}>Type</label>
+                                <input 
+                                    spellCheck="false" 
+                                    type="text" 
+                                    value={c.hitDice.type} 
+                                    onChange={(e) => handleNestedChange('hitDice', 'type', e.target.value)} 
+                                    className={`w-full bg-transparent text-center text-xl font-bold ${theme.accentText} outline-none placeholder-white/10`} 
+                                    placeholder="d?" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* EXHAUSTION (Col 3) */}
                     <div className="space-y-2">
                         <label className={`block text-[8px] font-bold uppercase ${theme.subText} text-center tracking-tighter`}>Exhaustion</label>
                         <div className="flex gap-0.5 flex-wrap justify-center">
@@ -133,55 +207,31 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
-                    
                     {/* CONDITION SECTION */}
                     <div className="space-y-2">
                         <label className={`block text-[9px] font-bold uppercase ${theme.subText} tracking-widest`}>Conditions</label>
-                        
                         <div className="flex flex-wrap gap-2 min-h-[24px]">
                             {(c.conditions || []).map(cond => (
-                                <button 
-                                    key={cond} 
-                                    onClick={() => toggleCondition(cond)} 
-                                    className={`px-2 py-1 ${theme.accentBg}/20 border ${theme.accentBorder} rounded text-[9px] font-bold uppercase ${theme.accentText} hover:bg-white/10 flex items-center gap-1 group`}
-                                >
+                                <button key={cond} onClick={() => toggleCondition(cond)} className={`px-2 py-1 ${theme.accentBg}/20 border ${theme.accentBorder} rounded text-[9px] font-bold uppercase ${theme.accentText} hover:bg-white/10 flex items-center gap-1 group`}>
                                     {cond}
                                     <span className={`${theme.accentText} group-hover:text-white`}><Icons.Trash /></span>
                                 </button>
                             ))}
                             {(c.conditions || []).length === 0 && <span className={`text-[10px] ${theme.subText} italic`}>No active conditions</span>}
                         </div>
-
-                        {/* Add Button & Dropdown */}
                         <div className="relative mt-2">
-                            <button 
-                                onClick={() => setShowCondMenu(!showCondMenu)}
-                                className={`w-full py-1.5 text-[10px] font-bold uppercase bg-black/20 border ${theme.border} ${theme.subText} hover:${theme.text} hover:border-zinc-500 rounded transition-colors flex items-center justify-center gap-2`}
-                            >
+                            <button onClick={() => setShowCondMenu(!showCondMenu)} className={`w-full py-1.5 text-[10px] font-bold uppercase bg-black/20 border ${theme.border} ${theme.subText} hover:${theme.text} hover:border-zinc-500 rounded transition-colors flex items-center justify-center gap-2`}>
                                 <Icons.Plus /> Add Condition
                             </button>
-
-                            {/* Dropdown Menu */}
                             {showCondMenu && (
                                 <div className={`absolute top-full left-0 w-full z-50 mt-1 ${theme.bgPanel} border ${theme.border} rounded-lg shadow-2xl max-h-48 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2`}>
-                                    {availableConditions.length > 0 ? (
-                                        availableConditions.map(cond => (
-                                            <button 
-                                                key={cond} 
-                                                onClick={() => toggleCondition(cond)} 
-                                                className={`w-full text-left px-3 py-2 text-[10px] font-bold uppercase ${theme.subText} hover:bg-white/10 hover:${theme.text} border-b ${theme.border}/50 last:border-0`}
-                                            >
-                                                {cond}
-                                            </button>
-                                        ))
-                                    ) : (
-                                        <div className={`p-2 text-[10px] ${theme.subText} text-center italic`}>No more conditions</div>
-                                    )}
+                                    {availableConditions.length > 0 ? (availableConditions.map(cond => (<button key={cond} onClick={() => toggleCondition(cond)} className={`w-full text-left px-3 py-2 text-[10px] font-bold uppercase ${theme.subText} hover:bg-white/10 hover:${theme.text} border-b ${theme.border}/50 last:border-0`}>{cond}</button>))) : (<div className={`p-2 text-[10px] ${theme.subText} text-center italic`}>No more conditions</div>)}
                                 </div>
                             )}
                         </div>
                     </div>
 
+                    {/* DEATH SAVES */}
                     <div className="space-y-2">
                         <label className={`block text-[9px] font-bold uppercase ${theme.subText} tracking-widest text-center`}>Death Saves</label>
                         <div className="flex flex-col gap-2 pt-2">
@@ -192,7 +242,7 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
                 </div>
             </div>
 
-            {/* Actions */}
+            {/* Actions & Resistances */}
             <div className={`${theme.bgPanel} border ${theme.border} rounded-xl overflow-hidden shadow-lg flex flex-col`}>
                 <div className={`bg-black/20 p-3 border-b ${theme.border} flex justify-between items-center text-[10px] font-bold uppercase ${theme.subText} tracking-widest`}>
                     <div className="flex items-center gap-2"><Icons.Sword /> Attacks & Actions</div>
@@ -212,27 +262,14 @@ const SheetCombat = ({ c, onUpdate, theme }) => {
                 </div>
             </div>
 
-            {/* Resistances (FIXED) */}
             <div className={`${theme.bgPanel} border ${theme.border} rounded-xl overflow-hidden shadow-lg flex flex-col`}>
                 <div className={`bg-black/20 p-1 border-b ${theme.border} flex overflow-x-auto no-scrollbar`}>
-                    {['resistances','vulnerabilities','immunities'].map(t => (
-                        <button 
-                            key={t} 
-                            onClick={() => setActiveResTab(t)} 
-                            className={`px-3 py-2 text-[8px] font-bold uppercase rounded-md m-0.5 transition-all ${activeResTab === t ? `${theme.accentBg} text-white shadow-inner` : `${theme.subText} hover:${theme.text}`}`}
-                        >
-                            {t}
-                        </button>
-                    ))}
+                    {['resistances','vulnerabilities','immunities'].map(t => (<button key={t} onClick={() => setActiveResTab(t)} className={`px-3 py-2 text-[8px] font-bold uppercase rounded-md m-0.5 transition-all ${activeResTab === t ? `${theme.accentBg} text-white shadow-inner` : `${theme.subText} hover:${theme.text}`}`}>{t}</button>))}
                 </div>
-                <div className={`px-4 py-2 bg-black/10 border-b ${theme.border} flex items-center gap-2`}>
-                    <div className={theme.accentText}><Icons.ShieldAlert /></div>
-                    <span className={`text-[10px] font-bold uppercase ${theme.accentText} tracking-widest`}>{getTabTitle(activeResTab)}</span>
-                </div>
+                <div className={`px-4 py-2 bg-black/10 border-b ${theme.border} flex items-center gap-2`}><div className={theme.accentText}><Icons.ShieldAlert /></div><span className={`text-[10px] font-bold uppercase ${theme.accentText} tracking-widest`}>{getTabTitle(activeResTab)}</span></div>
                 <textarea spellCheck="false" value={c[activeResTab] || ""} onChange={(e) => handleChange(activeResTab, e.target.value)} className={`w-full h-24 p-3 text-xs outline-none bg-transparent ${theme.text} custom-scrollbar resize-none font-medium focus:text-white transition-colors`} placeholder={`List ${activeResTab}...`} />
             </div>
 
-            {/* Saving Throws */}
             <div className={`${theme.bgPanel} border ${theme.border} rounded-xl p-4 shadow-lg h-full`}>
                 <h3 className={`text-[10px] font-bold ${theme.accentText} uppercase mb-3 border-b ${theme.border} pb-2 tracking-widest tracking-widest`}>Saving Throws</h3>
                 <div className="space-y-2">

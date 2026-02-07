@@ -9,11 +9,15 @@ import CampaignManager from './pages/CampaignManager/CampaignManager';
 // Components
 import Layout from './Layout';
 import Home from './pages/Home';
+import Login from './pages/Login';
+
+// Tools
 import CombatFlow from './pages/CombatFlow/CombatFlow';
 import MapManager from './pages/MapManager/MapManager';
 import StatBlockManager from './pages/StatBlock/StatBlockManager';
 import CharacterSheet from './pages/CharacterSheet/CharacterSheet';
 import Soundboard from './pages/Soundboard/Soundboard';
+import CampaignNotes from './pages/CampaignNotes';
 
 const App = () => {
   return (
@@ -34,9 +38,11 @@ const App = () => {
                 
                 {/* RETTELSE HER: Ændret fra "/statblock-manager" til "/stat-block" */}
                 <Route path="/stat-block" element={<StatBlockManager />} />
+                <Route path="/notes" element={<CampaignNotes />} />
                 
                 <Route path="/character-sheet" element={<CharacterSheet />} />
                 <Route path="/soundboard" element={<Soundboard />} />
+                <Route path="/login" element={<Login />} />
                 
             </Route>
           </Routes>

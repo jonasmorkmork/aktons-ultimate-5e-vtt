@@ -22,9 +22,52 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
     const { currentUser } = useAuth();
     const { campaignData, activeCampaignId } = useCampaign(); 
 
+    // --- LIVE UPDATE LOGIK STARTER HER ---
+    // 1. Vi opretter en lokal state til karakteren, så vi kan opdatere den live
+    const [liveChar, setLiveChar] = useState(character);
+
+    // 2. Hvis parent (props) ændrer sig, opdater vores state
+    useEffect(() => {
+        setLiveChar(character);
+    }, [character]);
+
+    // 3. LYT TIL DATABASEN (Fix til Live Items)
+    useEffect(() => {
+        if (!currentUser || !character?.id) return;
+
+        // Vi lytter på dokumentet hvor alle brugerens karakterer ligger
+        const charDocRef = doc(db, "users", currentUser.uid, "data", "characters");
+        
+        const unsub = onSnapshot(charDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const charList = data.list || [];
+                
+                // Find præcis denne karakter i listen
+                const foundChar = charList.find(ch => ch.id === character.id);
+                
+                if (foundChar) {
+                    // Opdater vores view med den nyeste data fra databasen
+                    // Dette fanger nye items, hp ændringer fra andre kilder osv.
+                    setLiveChar(prev => {
+                        // Lille tjek for at undgå unødvendige renders
+                        if (JSON.stringify(prev) === JSON.stringify(foundChar)) return prev;
+                        return foundChar;
+                    });
+                }
+            }
+        });
+
+        return () => unsub();
+    }, [currentUser, character?.id]);
+
+    // Vi bruger nu 'liveChar' i stedet for 'character' prop til at bygge 'c'
+    const c = { ...createNewCharacter(), ...liveChar };
+    // --- LIVE UPDATE LOGIK SLUT ---
+
     const [mobileTab, setMobileTab] = useState('stats');
     
-    const c = { ...createNewCharacter(), ...character };
+    // Sikr at arrays/objekter eksisterer
     c.stats = c.stats || { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
     c.hp = c.hp || { current: 10, max: 10, temp: 0 };
     c.hitDice = c.hitDice || { spent: 0, total: 1, type: "d10" };
@@ -33,7 +76,6 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
     // --- THEME LOGIC ---
     const theme = getTheme(c.theme || 'default');
     
-    // Hvis tema er 'custom', beregn style objektet med variablerne
     const customStyle = c.theme === 'custom' && c.customTheme ? {
         '--c-panel': c.customTheme.panel || '#18181b',
         '--c-border': c.customTheme.border || '#27272a',
@@ -48,12 +90,11 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
     const [messageQueue, setMessageQueue] = useState([]); 
     const [showDmMsgModal, setShowDmMsgModal] = useState(false);
 
-    // ... (Behold Sync, Message Listener, Title Updater logik her - uændret) ...
-    // For overskuelighedens skyld har jeg skjult dem i dette eksempel, men BEHOLD DEM!
-    // Klippe-klistre: Behold useEffect hooks herfra...
+    // --- SYNC TIL KAMPAGNE ---
     useEffect(() => {
         if (!activeCampaignId || !currentUser || !campaignData?.playerCharacters) return;
         const myEntry = campaignData.playerCharacters[currentUser.uid];
+        // Tjekker på 'c' som nu er live-opdateret
         if (myEntry && (myEntry.name !== c.name || myEntry.class !== c.class || myEntry.level !== c.level)) {
             const timer = setTimeout(() => {
                 updateDoc(doc(db, "campaigns", activeCampaignId), {
@@ -66,6 +107,7 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
         }
     }, [c.name, c.class, c.level, activeCampaignId, currentUser, campaignData]);
 
+    // --- MESSAGES ---
     useEffect(() => {
         if (!activeCampaignId || !currentUser) return;
         const targetIds = [currentUser.uid, "ALL"];
@@ -125,7 +167,6 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
         setCropImage(null);
     };
 
-    // Baggrundsstil
     const bgStyle = c.theme === 'custom' && c.customTheme?.bgImage 
         ? { backgroundImage: `url(${c.customTheme.bgImage})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }
         : {};
@@ -135,7 +176,6 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
             className={`min-h-screen p-2 md:p-8 pb-24 md:pb-8 fade-in relative transition-colors duration-300 ${theme.bg} ${theme.text}`}
             style={{ ...customStyle, ...bgStyle }}
         >
-            {/* Overlay for at gøre tekst læsbar ovenpå baggrundsbillede (kun hvis custom) */}
             {c.theme === 'custom' && c.customTheme?.bgImage && <div className="fixed inset-0 bg-black/60 z-[-1]" />}
 
             {showCropper && cropImage && <ImageCropper imageSrc={cropImage} onCancel={() => { setShowCropper(false); setCropImage(null); }} onSave={handleCropSave} />}

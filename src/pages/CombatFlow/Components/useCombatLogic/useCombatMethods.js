@@ -11,7 +11,7 @@ export const useCombatMethods = (state) => {
         setNotification,
         logsEndRef,
         setLastDamagedId,
-        setConfirmDialog,
+        setConfirmDialog, 
         playerForm, setPlayerForm,
         monsterForm, setMonsterForm,
         setInitModal,
@@ -64,7 +64,8 @@ export const useCombatMethods = (state) => {
     const resetShortcuts = () => {
         setShortcuts({
             NAV_DOWN: 'ArrowDown', NAV_UP: 'ArrowUp', SELECT_GROUP: 'Enter', DELETE: 'Delete',
-            HP_EDIT: 'd', NOTE_EDIT: 'n', CONDITION_MENU: 't', COMBAT_MODE: 'c', UNDO: 'z'
+            HP_EDIT: 'd', NOTE_EDIT: 'n', CONDITION_MENU: 't', COMBAT_MODE: 'c', UNDO: 'z',
+            NEXT_TURN: ' '
         });
         showNotification("Shortcuts reset to default");
     };
@@ -129,18 +130,30 @@ export const useCombatMethods = (state) => {
         return match ? match.initiative : null;
     };
 
+    // RETTET: Bedre håndtering af HP vs MaxHP
     const createCombatant = (base, isPlayer = false, customInit = null) => {
         const init = customInit !== null ? parseInt(customInit) : getSmartInitiative(base.bonus || 0);
         
         let startHp = 10;
         let maxHp = 10;
+        let tempHp = parseInt(base.tempHp || 0);
         
         if (base.hp && typeof base.hp === 'object') {
+            // Avanceret Monster format
             maxHp = parseInt(base.hp.max || 10);
             startHp = parseInt(base.hp.current !== undefined ? base.hp.current : maxHp);
+            if (base.hp.temp) tempHp = parseInt(base.hp.temp);
         } else {
-            startHp = parseInt(base.hp || base.maxHp || 10);
-            maxHp = startHp;
+            // Player format (fra CampaignContext) eller simpelt Monster format
+            if (base.maxHp) {
+                // Her har vi både hp (current) og maxHp
+                maxHp = parseInt(base.maxHp);
+                startHp = (base.hp !== undefined && base.hp !== null) ? parseInt(base.hp) : maxHp;
+            } else {
+                // Simpelt monster (kun 'hp' som er max)
+                startHp = parseInt(base.hp || 10);
+                maxHp = startHp;
+            }
         }
 
         return {
@@ -149,7 +162,7 @@ export const useCombatMethods = (state) => {
             name: base.name || "Unknown Entity",
             hp: startHp,
             maxHp: maxHp,
-            tempHp: parseInt(base.tempHp) || 0,
+            tempHp: tempHp,
             ac: parseInt(base.ac) || 10,
             initiative: init,
             bonus: parseInt(base.bonus) || 0,
@@ -162,9 +175,16 @@ export const useCombatMethods = (state) => {
     };
 
     // --- ACTIONS ---
+    const getTargets = (id) => {
+        return (selectedIds && selectedIds.includes(id)) ? selectedIds : [id];
+    };
+
     const updateHP = (id, value, type = 'delta') => {
+        const targets = getTargets(id);
+
         setCombatants(prev => prev.map(c => {
-            if (c.id !== id) return c;
+            if (!targets.includes(c.id)) return c;
+            
             let currentTemp = c.tempHp || 0;
             let currentHp = c.hp;
             let newC = { ...c };
@@ -179,10 +199,6 @@ export const useCombatMethods = (state) => {
                     currentTemp -= tempAbsorb; 
                     const remainingDamage = damage - tempAbsorb;
                     currentHp = Math.max(0, currentHp - remainingDamage); 
-                    if (remainingDamage > 0 || tempAbsorb > 0) {
-                        setLastDamagedId(id);
-                        setTimeout(() => setLastDamagedId(null), 600);
-                    }
                 } else {
                     currentHp = Math.min(c.maxHp, currentHp + change);
                 }
@@ -191,12 +207,22 @@ export const useCombatMethods = (state) => {
             }
             return newC;
         }));
+
+        if (type !== 'setTemp' && parseInt(value) < 0) {
+            setLastDamagedId(id);
+            setTimeout(() => setLastDamagedId(null), 600);
+        }
     };
 
-    const updateNote = (id, note) => setCombatants(prev => prev.map(c => c.id === id ? { ...c, note } : c));
+    const updateNote = (id, note) => {
+        const targets = getTargets(id);
+        setCombatants(prev => prev.map(c => targets.includes(c.id) ? { ...c, note } : c));
+    };
+
     const toggleCondition = (id, condition) => {
+        const targets = getTargets(id);
         setCombatants(prev => prev.map(c => {
-            if (c.id !== id) return c;
+            if (!targets.includes(c.id)) return c;
             const conditions = c.conditions || [];
             const exists = conditions.includes(condition);
             const newConditions = exists ? conditions.filter(x => x !== condition) : [...conditions, condition];
@@ -204,6 +230,7 @@ export const useCombatMethods = (state) => {
         }));
         setConditionMenuId(null);
     };
+
     const toggleDeathSave = (id, type, index) => {
         setCombatants(prev => prev.map(c => {
             if (c.id !== id) return c;
@@ -213,19 +240,29 @@ export const useCombatMethods = (state) => {
             return { ...c, deathSaves: { ...c.deathSaves, [type]: newSaves } };
         }));
     };
+
     const deleteCombatant = (id) => {
+        const targets = getTargets(id);
         setCombatants(prev => {
-            const next = prev.filter(c => c.id !== id);
-            if (activeId === id) setActiveId(next.length > 0 ? next[0].id : null);
+            const next = prev.filter(c => !targets.includes(c.id));
+            if (targets.includes(activeId)) {
+                setActiveId(next.length > 0 ? next[0].id : null);
+            }
             return next;
         });
-        addLog("Combatant removed", 'info');
+        setSelectedIds([]);
+        addLog(targets.length > 1 ? `${targets.length} combatants removed` : "Combatant removed", 'info');
     };
+
     const clearCombat = () => {
-        if (window.confirm("Clear all combatants?")) {
-            setCombatants([]); setRound(1); setTurnCount(1); setActiveId(null); setLogs([]); setHistory([]);
-            addLog("Combat cleared", 'warn');
-        }
+        handleConfirm(
+            "Clear Combat?",
+            "Are you sure you want to clear all combatants? This cannot be undone.",
+            () => {
+                setCombatants([]); setRound(1); setTurnCount(1); setActiveId(null); setLogs([]); setHistory([]); setSelectedIds([]);
+                addLog("Combat cleared", 'warn');
+            }
+        );
     };
     
     const triggerShake = () => {};
@@ -247,15 +284,13 @@ export const useCombatMethods = (state) => {
         setTurnCount(t => t + 1);
     };
 
-    // --- ADD COMBATANT (RETTET: Support for countOverride) ---
-    // Tilføjet 'countOverride' som tredje argument
+    // --- ADD COMBATANT ---
     const addCombatant = (source, data = null, countOverride = null) => {
         pushHistory();
         let baseData = null;
         let isPlayer = false;
         let customInit = null;
         
-        // 1. Bestem antal: Brug override hvis den findes (fra knap), ellers formen, ellers 1
         let countInput = countOverride || ((source === 'auto') ? (monsterForm.count || '1') : '1');
 
         if (source === 'manual') {
@@ -279,18 +314,15 @@ export const useCombatMethods = (state) => {
         }
 
         if (baseData) {
-            // Beregn antal (parse '1d4', '2d6' eller fast tal)
             const count = rollDice(String(countInput));
             
             let newEntities = [];
-            let currentList = [...combatants]; // Kopi af listen vi bygger videre på
+            let currentList = [...combatants]; 
 
             for(let i=0; i < count; i++) {
-                // Bestem initiativ
                 let thisInit = customInit;
                 if (thisInit === null) {
                     if (!isPlayer && source !== 'lair') {
-                        // Prøv at finde gruppe-initiativ fra den liste vi er ved at bygge
                         const groupInitVal = findExistingGroupInitiative(baseData.name, currentList);
                         if (groupInitVal !== null) thisInit = groupInitVal;
                     }
@@ -298,7 +330,6 @@ export const useCombatMethods = (state) => {
                 
                 const uniqueName = getUniqueName(baseData.name, currentList);
                 
-                // Opret kopi for ikke at overskrive library
                 const combatantData = { ...baseData, name: uniqueName };
                 const newCombatant = createCombatant(combatantData, isPlayer, thisInit);
                 
@@ -306,7 +337,6 @@ export const useCombatMethods = (state) => {
                 currentList.push(newCombatant);
             }
             
-            // Sorter og gem
             const sorted = currentList.sort((a, b) => b.initiative - a.initiative);
             setCombatants(sorted);
             
@@ -319,10 +349,8 @@ export const useCombatMethods = (state) => {
 
     const addFromLibrary = (item, qty = null) => {
         if (item.type === 'player') {
-            // Spillere går stadig gennem modalen for initiativ
             setInitModal({ players: [{ ...item, count: 1 }], monsters: [] });
         } else {
-            // Monstre sendes direkte videre med det ønskede antal (qty)
             addCombatant('library', item, qty);
         }
     };
@@ -390,17 +418,21 @@ export const useCombatMethods = (state) => {
     };
     
     const handleLongRest = () => {
-        if(window.confirm("Perform Long Rest? This will heal everyone fully.")) {
-            pushHistory();
-            setCombatants(prev => prev.map(c => ({
-                ...c,
-                hp: c.maxHp,
-                tempHp: 0,
-                deathSaves: { successes: [false, false, false], failures: [false, false, false] }
-            })));
-            setRound(1);
-            addLog("Long Rest performed", 'heal');
-        }
+        handleConfirm(
+            "Long Rest",
+            "Perform Long Rest? This will heal everyone fully.",
+            () => {
+                pushHistory();
+                setCombatants(prev => prev.map(c => ({
+                    ...c,
+                    hp: c.maxHp,
+                    tempHp: 0,
+                    deathSaves: { successes: [false, false, false], failures: [false, false, false] }
+                })));
+                setRound(1);
+                addLog("Long Rest performed", 'heal');
+            }
+        );
     };
 
     const resetMonsterForm = () => { setMonsterForm({ name: '', count: '1', bonus: '', hp: '', ac: '', xp: '', dc: '' }); setEditingLibraryId(null); };
@@ -414,6 +446,6 @@ export const useCombatMethods = (state) => {
         handleImportSrdMonster, handleParseStatBlock, modifyCombatInput, executeRunPreset,
         resetMonsterForm, resetPlayerForm, updateHP, updateNote, toggleCondition, toggleDeathSave,
         activeUnit, rollDice, triggerShake,
-        updateShortcut, resetShortcuts // Eksporter shortcuts metoder
+        updateShortcut, resetShortcuts 
     };
 };

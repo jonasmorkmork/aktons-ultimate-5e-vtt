@@ -118,7 +118,7 @@ const CombatantRow = ({
                                     {(c.tempHp || 0) > 0 && (
                                         <div 
                                             // CUSTOM COLOR: #FFDF00 (Golden)
-                                            className="absolute top-0 left-0 h-full bg-[#FFFF00]/75 transition-all duration-500 border-l border-white/30"
+                                            className="absolute top-0 left-0 h-full bg-[#7800FA]/75 transition-all duration-500 border-l border-white/30"
                                             style={{ width: `${tempHpPercent}%` }}
                                         ></div>
                                     )}

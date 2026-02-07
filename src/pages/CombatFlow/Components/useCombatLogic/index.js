@@ -6,7 +6,7 @@ export const useCombatLogic = () => {
     // 1. Hent tilstand (Data, UI, Forms, groupInit osv.)
     const state = useCombatState();
 
-    // 2. Kør persistence (Håndterer localStorage save/load)
+    // 2. Kør persistence (Håndterer Firebase save/load automatisk)
     useCombatPersistence(state);
 
     // 3. Hent metoder (addCombatant, nextTurn, updateHP osv.)

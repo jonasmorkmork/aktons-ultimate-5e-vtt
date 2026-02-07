@@ -1,18 +1,18 @@
-// src/context/AuthContext.jsx
 import React, { useContext, useState, useEffect } from "react";
-import { auth } from "../firebase"; // Henter auth fra din konfiguration
+import { auth } from "../firebase";
+// HUSK at importere disse nye funktioner fra firebase/auth:
 import { 
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
     signOut, 
     onAuthStateChanged,
     GoogleAuthProvider,
-    signInWithPopup
+    signInWithPopup,
+    sendPasswordResetEmail // Hvis du vil have "glemt kodeord"
 } from "firebase/auth";
 
 const AuthContext = React.createContext();
 
-// Custom hook så vi nemt kan bruge contexten i andre filer
 export function useAuth() {
     return useContext(AuthContext);
 }
@@ -21,43 +21,47 @@ export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // Opret bruger med email/password
+    // 1. Opret bruger med Email/Password
     function signup(email, password) {
         return createUserWithEmailAndPassword(auth, email, password);
     }
 
-    // Log ind med email/password
+    // 2. Log ind med Email/Password
     function login(email, password) {
         return signInWithEmailAndPassword(auth, email, password);
     }
 
-    // Log ind med Google (Super nemt)
-    function googleLogin() {
+    // 3. Log ind med Google (den du har i forvejen)
+    function googleSignIn() {
         const provider = new GoogleAuthProvider();
         return signInWithPopup(auth, provider);
     }
 
-    // Log ud
+    // 4. Log ud
     function logout() {
         return signOut(auth);
     }
 
-    // Lytter konstant på ændringer i auth-status (Login/Logout)
+    // 5. Nulstil kodeord (valgfri)
+    function resetPassword(email) {
+        return sendPasswordResetEmail(auth, email);
+    }
+
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             setCurrentUser(user);
-            setLoading(false); // Vi er færdige med at loade første gang
+            setLoading(false);
         });
-
-        return unsubscribe; // Ryd op når komponenten unmountes
+        return unsubscribe;
     }, []);
 
     const value = {
         currentUser,
-        signup,
-        login,
+        signup,        // Ny
+        login,         // Ny
+        googleSignIn,
         logout,
-        googleLogin
+        resetPassword  // Ny
     };
 
     return (

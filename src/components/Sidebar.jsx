@@ -46,12 +46,20 @@ const Sidebar = ({ isOpen, onClose }) => {
 
             <div className="w-10 h-px bg-slate-800 my-2"></div>
 
-            {/* CAMPAIGNS (NY) */}
+            {/* CAMPAIGNS */}
             <NavItem 
                 to="/campaigns" 
                 label="Campaigns"
                 onClick={onClose}
                 icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.732a48.524 48.524 0 0 1-.005-10.499l-3.11.732a9 9 0 0 1-6.085-.711l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" /></svg>}
+            />
+
+            {/* NOTES (NY) */}
+            <NavItem 
+                to="/notes" 
+                label="Notes"
+                onClick={onClose}
+                icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>}
             />
 
             {/* COMBAT FLOW */}

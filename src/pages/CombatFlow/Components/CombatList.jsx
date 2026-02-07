@@ -4,7 +4,6 @@ import * as Icons from './CombatIcons';
 
 const { Folder, FolderOpen, Trash2 } = Icons;
 
-// Listen skal matche den rækkefølge, de vises i CombatantRow (typisk alfabetisk)
 const CONDITIONS_LIST = [
     "Blinded", "Charmed", "Deafened", "Frightened", "Grappled", 
     "Incapacitated", "Invisible", "Paralyzed", "Petrified", "Poisoned", 
@@ -19,8 +18,8 @@ const CombatList = ({ logic }) => {
         handleConfirm, deleteList, maxGroupSize,
         shortcuts, 
         combatDamageModal,
-        conditionMenuId, setConditionMenuId, // Hent condition states
-        menuIndex, setMenuIndex, toggleCondition // Hent metoder
+        conditionMenuId, setConditionMenuId, 
+        menuIndex, setMenuIndex, toggleCondition 
     } = logic;
 
     // --- GROUPING LOGIC ---
@@ -102,14 +101,43 @@ const CombatList = ({ logic }) => {
     const cursorId = cursorItem && cursorItem.type === 'unit' ? cursorItem.id : null;
     const cursorGroupKey = cursorItem && cursorItem.type === 'group' ? cursorItem.key : null;
 
+    // --- AUTO SCROLL EFFECT ---
+    useEffect(() => {
+        if (!cursorItem) return;
+        
+        const domId = cursorItem.type === 'group' 
+            ? `nav-group-${cursorItem.key}` 
+            : `nav-unit-${cursorItem.id}`;
+        
+        const el = document.getElementById(domId);
+        if (el) {
+            const rect = el.getBoundingClientRect();
+            
+            // Definer "No-Scroll Zonen". 
+            // Header er ca. 80-100px høj, Footer er ca. 80-100px høj.
+            const headerHeight = 120; // Hvor meget plads toppen tager
+            const footerHeight = 140; // Hvor meget plads bunden tager
+            
+            const isObscuredTop = rect.top < headerHeight;
+            const isObscuredBottom = rect.bottom > (window.innerHeight - footerHeight);
+
+            if (isObscuredTop) {
+                // Hvis den er gemt i toppen, scroll så den kommer ned i midten
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else if (isObscuredBottom) {
+                // Hvis den er gemt i bunden, scroll så den kommer op i midten
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }, [selectedIndex, cursorItem]);
+
     // --- KEYBOARD SHORTCUTS ---
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
-            if (combatDamageModal) return; // Bloker navigation hvis damage modal er åben
+            if (combatDamageModal) return; 
 
-            // --- NYT: CONDITION MENU NAVIGATION ---
-            // Hvis menuen er åben, hijack navigationen
+            // Condition Menu Navigation
             if (conditionMenuId) {
                 if (e.key === 'ArrowDown') {
                     e.preventDefault();
@@ -119,17 +147,15 @@ const CombatList = ({ logic }) => {
                     setMenuIndex(prev => (prev - 1 + CONDITIONS_LIST.length) % CONDITIONS_LIST.length);
                 } else if (e.key === 'Enter') {
                     e.preventDefault();
-                    // Toggle den valgte condition (metoden lukker selv menuen)
                     toggleCondition(conditionMenuId, CONDITIONS_LIST[menuIndex]);
                 } else if (e.key === 'Escape' || e.key.toLowerCase() === shortcuts.CONDITION_MENU.toLowerCase()) {
                     e.preventDefault();
-                    setConditionMenuId(null); // Luk menu
+                    setConditionMenuId(null);
                 }
-                return; // VIGTIGT: Stop her, så vi ikke scroller i listen bagved
+                return;
             }
 
-            // --- NORMAL NAVIGATION ---
-
+            // Global Shortcuts
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === logic.shortcuts.UNDO.toLowerCase()) {
                 e.preventDefault();
                 if (logic.undo) logic.undo();
@@ -141,8 +167,17 @@ const CombatList = ({ logic }) => {
                 return;
             }
 
+            // NEXT TURN SHORTCUT (Space)
+            const nextTurnKey = logic.shortcuts.NEXT_TURN || ' ';
+            if (e.key === nextTurnKey || (nextTurnKey === ' ' && e.code === 'Space')) {
+                e.preventDefault(); // Forhindre scroll page down
+                logic.nextTurn();
+                return;
+            }
+
             if (!inCombatMode) return;
 
+            // Navigation
             if (e.key === logic.shortcuts.NAV_DOWN || e.key === logic.shortcuts.NAV_UP) {
                 e.preventDefault();
                 const direction = e.key === logic.shortcuts.NAV_DOWN ? 1 : -1;
@@ -205,13 +240,13 @@ const CombatList = ({ logic }) => {
                 e.preventDefault();
                 if (cursorId) {
                     logic.setConditionMenuId(cursorId);
-                    logic.setMenuIndex(0); // Reset index når vi åbner
+                    logic.setMenuIndex(0); 
                 }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [inCombatMode, selectedIndex, selectedIds, anchorId, expandedGroups, viewList, navigableItems, logic, combatDamageModal, conditionMenuId, menuIndex]); // Husk dependencies til condition menuen
+    }, [inCombatMode, selectedIndex, selectedIds, anchorId, expandedGroups, viewList, navigableItems, logic, combatDamageModal, conditionMenuId, menuIndex]);
 
     const activeUnit = logic.combatants.find(c => c.id === activeId);
 
@@ -240,7 +275,8 @@ const CombatList = ({ logic }) => {
 
                     return (
                         <div key={item.key} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                            <div onClick={() => setExpandedGroups(p => p.includes(item.key) ? p.filter(k=>k!==item.key) : [...p, item.key])} className={groupClass}>
+                            {/* RETTET: ID er flyttet herned, så scroll kun ser på selve bjælken */}
+                            <div id={`nav-group-${item.key}`} onClick={() => setExpandedGroups(p => p.includes(item.key) ? p.filter(k=>k!==item.key) : [...p, item.key])} className={groupClass}>
                                 <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
                                 <div className="relative w-10 h-10 flex items-center justify-center shrink-0">
                                     <div className={`absolute inset-0 transform rotate-45 border transition-colors ${hasActive ? 'bg-amber-900/60 border-amber-500' : 'bg-slate-900 border-slate-600'}`}></div>
@@ -262,7 +298,11 @@ const CombatList = ({ logic }) => {
                                         const isPrimaryActive = c.id === activeId;
                                         const isUnitSelected = inCombatMode && (cursorId === c.id || selectedIds.includes(c.id));
 
-                                        return <CombatantRow key={c.id} c={c} isActive={isActive} isPrimaryActive={isPrimaryActive} hpEditId={logic.hpEditId} hpEditValue={logic.hpEditValue} setHpEditId={logic.setHpEditId} setHpEditValue={logic.setHpEditValue} updateHP={logic.updateHP} toggleDeathSave={logic.toggleDeathSave} toggleCondition={logic.toggleCondition} setConditionMenuId={logic.setConditionMenuId} conditionMenuId={logic.conditionMenuId} menuIndex={logic.menuIndex} deleteCombatant={logic.deleteCombatant} updateNote={logic.updateNote} isSelected={isUnitSelected} isCombatMode={inCombatMode} noteEditId={logic.noteEditId} setNoteEditId={logic.setNoteEditId} lastDamagedId={logic.lastDamagedId} />;
+                                        return (
+                                            <div key={c.id} id={`nav-unit-${c.id}`}>
+                                                <CombatantRow c={c} isActive={isActive} isPrimaryActive={isPrimaryActive} hpEditId={logic.hpEditId} hpEditValue={logic.hpEditValue} setHpEditId={logic.setHpEditId} setHpEditValue={logic.setHpEditValue} updateHP={logic.updateHP} toggleDeathSave={logic.toggleDeathSave} toggleCondition={logic.toggleCondition} setConditionMenuId={logic.setConditionMenuId} conditionMenuId={logic.conditionMenuId} menuIndex={logic.menuIndex} deleteCombatant={logic.deleteCombatant} updateNote={logic.updateNote} isSelected={isUnitSelected} isCombatMode={inCombatMode} noteEditId={logic.noteEditId} setNoteEditId={logic.setNoteEditId} lastDamagedId={logic.lastDamagedId} />
+                                            </div>
+                                        );
                                     })}
                                 </div>
                             )}
@@ -275,7 +315,11 @@ const CombatList = ({ logic }) => {
                 const isPrimaryActive = item.data.id === activeId;
                 const isUnitSelected = inCombatMode && (cursorId === item.data.id || selectedIds.includes(item.data.id));
 
-                return <CombatantRow key={item.data.id} c={item.data} isActive={isActive} isPrimaryActive={isPrimaryActive} hpEditId={logic.hpEditId} hpEditValue={logic.hpEditValue} setHpEditId={logic.setHpEditId} setHpEditValue={logic.setHpEditValue} updateHP={logic.updateHP} toggleDeathSave={logic.toggleDeathSave} toggleCondition={logic.toggleCondition} setConditionMenuId={logic.setConditionMenuId} conditionMenuId={logic.conditionMenuId} menuIndex={logic.menuIndex} deleteCombatant={logic.deleteCombatant} updateNote={logic.updateNote} isSelected={isUnitSelected} isCombatMode={inCombatMode} noteEditId={logic.noteEditId} setNoteEditId={logic.setNoteEditId} lastDamagedId={logic.lastDamagedId} />;
+                return (
+                    <div key={item.data.id} id={`nav-unit-${item.data.id}`}>
+                        <CombatantRow c={item.data} isActive={isActive} isPrimaryActive={isPrimaryActive} hpEditId={logic.hpEditId} hpEditValue={logic.hpEditValue} setHpEditId={logic.setHpEditId} setHpEditValue={logic.setHpEditValue} updateHP={logic.updateHP} toggleDeathSave={logic.toggleDeathSave} toggleCondition={logic.toggleCondition} setConditionMenuId={logic.setConditionMenuId} conditionMenuId={logic.conditionMenuId} menuIndex={logic.menuIndex} deleteCombatant={logic.deleteCombatant} updateNote={logic.updateNote} isSelected={isUnitSelected} isCombatMode={inCombatMode} noteEditId={logic.noteEditId} setNoteEditId={logic.setNoteEditId} lastDamagedId={logic.lastDamagedId} />
+                    </div>
+                );
             })}
         </div>
     );

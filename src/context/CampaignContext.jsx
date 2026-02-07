@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../firebase'; 
-import { doc, onSnapshot } from 'firebase/firestore';
+// NYT: Tilføjet updateDoc og arrayUnion til imports
+import { doc, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
 import { useAuth } from './AuthContext'; 
 
 const CampaignContext = createContext();
@@ -28,7 +29,7 @@ export function CampaignProvider({ children }) {
         localStorage.removeItem('vtt_active_encounter');
     };
 
-    // --- 2. NYT: CAMPAIGN STATE ---
+    // --- 2. CAMPAIGN STATE ---
     const [activeCampaignId, setActiveCampaignId] = useState(() => {
         return localStorage.getItem('vtt_active_campaign_id') || null;
     });
@@ -47,7 +48,6 @@ export function CampaignProvider({ children }) {
 
         setIsLoadingCampaign(true);
         
-        // Opret live forbindelse til den specifikke kampagne
         const unsub = onSnapshot(doc(db, "campaigns", activeCampaignId), (docSnap) => {
             setIsLoadingCampaign(false);
             
@@ -55,14 +55,12 @@ export function CampaignProvider({ children }) {
                 const data = docSnap.data();
                 setCampaignData({ id: docSnap.id, ...data });
 
-                // Bestem brugerens rolle
                 if (currentUser && data.dmId === currentUser.uid) {
                     setRole('dm');
                 } else {
                     setRole('player');
                 }
             } else {
-                // Kampagnen findes ikke mere (eller ID er forkert)
                 setCampaignData(null);
                 setRole(null);
             }
@@ -71,7 +69,6 @@ export function CampaignProvider({ children }) {
             setIsLoadingCampaign(false);
         });
 
-        // Ryd op når komponenten unmonteres eller ID skifter
         return () => unsub();
     }, [activeCampaignId, currentUser]);
 
@@ -88,19 +85,60 @@ export function CampaignProvider({ children }) {
         localStorage.removeItem('vtt_active_campaign_id');
     };
 
+    // --- 3. NYT: SEND ITEM LOGIC (Mellemmanden) ---
+    const sendItemToCharacter = async (characterId, itemData) => {
+        if (!characterId) return { success: false, message: "No character selected" };
+
+        try {
+            // 1. Bestem kategori baseret på item type (matcher SheetBio logik)
+            // Vi antager at itemData har en 'type' eller 'category' property, eller vi gætter
+            let category = 'items'; // Default
+            let typeLower = (itemData.type || "").toLowerCase();
+            
+            // Simpel logik til at placere det rigtigt i inventory
+            if (itemData.damage || typeLower.includes('weapon') || typeLower.includes('sword') || typeLower.includes('axe') || typeLower.includes('bow')) {
+                category = 'weapons';
+            } else if (itemData.ac || typeLower.includes('armor') || typeLower.includes('shield')) {
+                category = 'armor';
+            }
+
+            // 2. Klargør data (Sikr at det har et unikt ID til modtageren)
+            const itemToSend = {
+                ...itemData,
+                id: Date.now(), // Nyt ID så det ikke konflikter
+                addedAt: new Date().toISOString()
+            };
+
+            // 3. Opdater karakterens dokument i 'characters' kollektionen
+            const charRef = doc(db, "characters", characterId);
+            
+            // Vi bruger dot-notation til at opdatere et array inde i et objekt: "inventory.weapons"
+            await updateDoc(charRef, {
+                [`inventory.${category}`]: arrayUnion(itemToSend)
+            });
+
+            return { success: true, message: `Sent ${itemData.name} to player!` };
+
+        } catch (error) {
+            console.error("Error sending item:", error);
+            return { success: false, message: "Failed to send item." };
+        }
+    };
+
     const value = {
-        // Encounter stuff
         activeEncounterData,
         sendEncounterToCombat,
         clearActiveEncounter,
 
-        // Campaign stuff
         activeCampaignId,
         campaignData,
         role,
         isLoadingCampaign,
         connectToCampaign,
-        disconnectCampaign
+        disconnectCampaign,
+        
+        // Den nye funktion
+        sendItemToCharacter 
     };
 
     return (

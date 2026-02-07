@@ -1,5 +1,5 @@
 import React from 'react'; // Fjernede { useEffect, useState } da de ikke bruges her mere
-import { useCombatLogic } from './components/useCombatLogic/index';
+import { useCombatLogic } from './Components/useCombatLogic/index';
 import CombatHeader from './components/CombatHeader';
 import CombatDashboard from './components/CombatDashboard';
 import CombatList from './components/CombatList';

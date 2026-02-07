@@ -80,16 +80,17 @@ const SheetSpells = ({ c, onUpdate, theme }) => {
                     <div className={`bg-black/20 px-2 py-1 rounded border ${theme.border} flex flex-col justify-center shadow-inner min-w-[80px]`}>
                         <span className={`text-[8px] font-bold ${theme.subText} uppercase text-center`}>Ability</span>
                         <select 
-                            className={`bg-transparent text-sm font-bold ${theme.text} outline-none cursor-pointer uppercase text-center appearance-none w-full`}
+                            // ÆNDRING HER: Skiftet 'bg-transparent' ud med 'bg-zinc-900' og 'theme.text' ud med 'text-zinc-200'
+                            className={`bg-zinc-900 text-zinc-200 text-sm font-bold outline-none cursor-pointer uppercase text-center appearance-none w-full rounded`}
                             value={c.spellcastingAbility || 'Intelligence'}
                             onChange={(e) => onUpdate({ spellcastingAbility: e.target.value })}
                         >
-                            <option value="Intelligence">INT</option>
-                            <option value="Wisdom">WIS</option>
-                            <option value="Charisma">CHA</option>
-                            <option value="Constitution">CON</option>
-                            <option value="Strength">STR</option>
-                            <option value="Dexterity">DEX</option>
+                            <option className="bg-zinc-900 text-zinc-200" value="Intelligence">INT</option>
+                            <option className="bg-zinc-900 text-zinc-200" value="Wisdom">WIS</option>
+                            <option className="bg-zinc-900 text-zinc-200" value="Charisma">CHA</option>
+                            <option className="bg-zinc-900 text-zinc-200" value="Constitution">CON</option>
+                            <option className="bg-zinc-900 text-zinc-200" value="Strength">STR</option>
+                            <option className="bg-zinc-900 text-zinc-200" value="Dexterity">DEX</option>
                         </select>
                     </div>
 

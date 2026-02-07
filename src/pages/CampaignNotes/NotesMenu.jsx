@@ -3,14 +3,30 @@ import { PlusIcon, TrashIcon, BookIcon, ChevronRight } from '../CampaignManager/
 import { useNavigate } from 'react-router-dom';
 import { NOTEBOOK_COLORS } from './CreateNotebookModal'; 
 
-const NotebookCard = ({ notebook, onClick, onDelete }) => {
-    const themeColor = notebook.color || NOTEBOOK_COLORS[0];
+// Fallback hvis importen fejler eller listen er tom
+const DEFAULT_COLOR = { name: 'Amber', hex: '#f59e0b', border: 'border-amber-500' };
+
+// Definer PencilIcon lokalt her for at være sikker på den findes
+const PencilIcon = ({ size = 24, className = "" }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+        <path d="m15 5 4 4"/>
+    </svg>
+);
+
+const NotebookCard = ({ notebook, onClick, onDelete, onEdit }) => {
+    // SIKKERHEDSNET: Hvis NOTEBOOK_COLORS er undefined, brug DEFAULT_COLOR
+    const colors = (typeof NOTEBOOK_COLORS !== 'undefined' && NOTEBOOK_COLORS.length > 0) ? NOTEBOOK_COLORS : [DEFAULT_COLOR];
+    const themeColor = notebook.color || colors[0];
+    
+    // Sikr at themeColor altid har en hex værdi
+    const borderColor = themeColor?.hex || DEFAULT_COLOR.hex;
     
     return (
         <div 
             onClick={onClick}
             className="group relative bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer transition-all hover:-translate-y-1 hover:shadow-xl flex flex-col h-48"
-            style={{ borderColor: notebook.image ? 'rgba(30, 41, 59, 1)' : themeColor.hex }}
+            style={{ borderColor: notebook.image ? 'rgba(30, 41, 59, 1)' : borderColor }}
         >
             {/* Background Image (hvis det findes) */}
             {notebook.image && (
@@ -24,22 +40,37 @@ const NotebookCard = ({ notebook, onClick, onDelete }) => {
                 <div className="flex items-start justify-between">
                     <div 
                         className="p-3 rounded-lg transition-colors shadow-lg"
-                        style={{ backgroundColor: notebook.image ? 'rgba(15, 23, 42, 0.8)' : `${themeColor.hex}20`, color: themeColor.hex }}
+                        style={{ backgroundColor: notebook.image ? 'rgba(15, 23, 42, 0.8)' : `${borderColor}20`, color: borderColor }}
                     >
                         <BookIcon size={24} />
                     </div>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onDelete(notebook.id); }}
-                        className="text-slate-400 hover:text-red-500 p-2 rounded-full bg-black/20 hover:bg-black/50 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                        <TrashIcon size={16} />
-                    </button>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {/* REDIGER KNAP */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onEdit(notebook); }}
+                            className="text-slate-400 hover:text-white p-2 rounded-full bg-black/20 hover:bg-black/50 transition-colors"
+                            title="Edit Notebook"
+                        >
+                            <PencilIcon size={16} />
+                        </button>
+                        
+                        {/* SLET KNAP */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onDelete(notebook.id); }}
+                            className="text-slate-400 hover:text-red-500 p-2 rounded-full bg-black/20 hover:bg-black/50 transition-colors"
+                            title="Delete Notebook"
+                        >
+                            <TrashIcon size={16} />
+                        </button>
+                    </div>
                 </div>
                 
                 <div className="mt-auto">
                     <h3 className="text-xl font-bold text-white group-hover:text-amber-400 transition-colors truncate drop-shadow-md">{notebook.name}</h3>
                     <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                        Notebook <span className="w-1 h-1 bg-slate-500 rounded-full"></span> {new Date(notebook.createdAt).toLocaleDateString()}
+                        Notebook <span className="w-1 h-1 bg-slate-500 rounded-full"></span> {new Date(notebook.createdAt || Date.now()).toLocaleDateString()}
                     </p>
                 </div>
             </div>
@@ -47,7 +78,7 @@ const NotebookCard = ({ notebook, onClick, onDelete }) => {
     );
 };
 
-const NotesMenu = ({ notebooks, onCreate, onOpen, onDelete }) => {
+const NotesMenu = ({ notebooks, onCreate, onOpen, onDelete, onEdit }) => {
     const navigate = useNavigate();
 
     return (
@@ -78,7 +109,13 @@ const NotesMenu = ({ notebooks, onCreate, onOpen, onDelete }) => {
 
                 {/* Notebook List */}
                 {notebooks.map(notebook => (
-                    <NotebookCard key={notebook.id} notebook={notebook} onClick={() => onOpen(notebook)} onDelete={onDelete} />
+                    <NotebookCard 
+                        key={notebook.id} 
+                        notebook={notebook} 
+                        onClick={() => onOpen(notebook)} 
+                        onDelete={onDelete}
+                        onEdit={onEdit} 
+                    />
                 ))}
             </div>
         </div>

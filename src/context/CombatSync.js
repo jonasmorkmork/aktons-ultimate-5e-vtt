@@ -9,40 +9,34 @@ const sanitizeData = (obj) => {
     }));
 };
 
-// --- HELPER: CONVERT CHARACTER TO COMBATANT (UNIVERSAL TOLK) ---
+// --- HELPER: CONVERT CHARACTER TO COMBATANT ---
 export const convertToCombatant = (char, uid) => {
     const data = char.liveData || char;
     
-    // --- 1. FIND ATTRIBUTES (STR, DEX, ETC) ---
-    // Vi tjekker alle mulige steder: data.stats.dexterity, data.stats.DEX, data.dexterity, etc.
     const getStat = (name, shortName) => {
         if (data.stats) {
             if (data.stats[name] !== undefined) return parseInt(data.stats[name]);
             if (data.stats[shortName] !== undefined) {
-                // SRD data kan være { val: 16, mod: 3 } eller bare 16
                 const val = data.stats[shortName];
                 return typeof val === 'object' ? parseInt(val.val || val.value || 10) : parseInt(val);
             }
         }
         if (data[name] !== undefined) return parseInt(data[name]);
         if (data[shortName] !== undefined) return parseInt(data[shortName]);
-        return 10; // Default
+        return 10;
     };
 
     const dex = getStat('dexterity', 'DEX');
     const dexMod = Math.floor((dex - 10) / 2);
     
-    // --- 2. FIND HP ---
     let maxHp = 10;
     let currentHp = 10;
     let tempHp = 0;
 
-    // Tjek SRD format (hit_points)
     if (data.hit_points) {
         maxHp = parseInt(data.hit_points);
         currentHp = maxHp;
     }
-    // Tjek lokalt format (hp: "12d8+4" eller hp: {max: 50...})
     else if (data.hp) {
         if (typeof data.hp === 'object') {
             maxHp = parseInt(data.hp.max || 10);
@@ -54,16 +48,13 @@ export const convertToCombatant = (char, uid) => {
             currentHp = maxHp;
         }
     } 
-    // Tjek flat format
     else if (data.maxHp) {
         maxHp = parseInt(data.maxHp);
         currentHp = maxHp;
     }
 
-    // --- 3. FIND AC ---
     const ac = parseInt(data.ac || data.armor_class || 10);
 
-    // --- 4. BYG OBJEKTET ---
     const combatant = {
         id: uid || (data.id ? String(data.id) : (Date.now().toString() + Math.random().toString().slice(2, 8))), 
         linkedId: uid || null, 
@@ -77,8 +68,6 @@ export const convertToCombatant = (char, uid) => {
         dc: parseInt(data.dc || 10),
         xp: parseInt(data.xp || 0),
         initiative: 0,
-        
-        // Gem evt. billede hvis det findes (token)
         image: data.image || data.token || data.img || null
     };
 
@@ -145,14 +134,12 @@ const formatItemForSheet = (input) => {
     return item;
 };
 
-// --- LOGIC: ADD SINGLE MONSTER TO LIBRARY (BESTIARY) ---
+// --- LOGIC: ADD SINGLE MONSTER TO LIBRARY ---
 export const sendCharacterToCombat = async (currentUser, char, uid) => {
     if (!currentUser) return false;
     try {
         const rawCombatant = convertToCombatant(char, uid);
         const combatant = sanitizeData(rawCombatant);
-
-        // Destination: Library (Bestiary)
         const libRef = doc(db, 'users', currentUser.uid, 'combat', 'library'); 
         
         await runTransaction(db, async (transaction) => {
@@ -164,12 +151,10 @@ export const sendCharacterToCombat = async (currentUser, char, uid) => {
                 if (idx >= 0) currentItems[idx] = combatant; 
                 else currentItems.push(combatant);
             } else {
-                // For monstre tjekker vi ID for at undgå dubletter
                 const idx = currentItems.findIndex(c => String(c.id) === String(combatant.id));
                 if (idx >= 0) currentItems[idx] = combatant;
                 else currentItems.push(combatant);
             }
-            
             transaction.set(libRef, { items: currentItems }, { merge: true });
         });
         return true; 
@@ -179,10 +164,9 @@ export const sendCharacterToCombat = async (currentUser, char, uid) => {
     }
 };
 
-// --- LOGIC: SEND ENCOUNTER TO PRESETS & LIBRARY (FIXED DATA SYNC) ---
+// --- LOGIC: SEND ENCOUNTER TO PRESETS & LIBRARY ---
 export const addEncounterToCombat = async (currentUser, encounter) => {
     if (!currentUser || !encounter) return false;
-    
     try {
         const libRef = doc(db, 'users', currentUser.uid, 'combat', 'library'); 
         const presetsRef = doc(db, 'users', currentUser.uid, 'combat', 'presets');
@@ -192,16 +176,9 @@ export const addEncounterToCombat = async (currentUser, encounter) => {
         const presetMonstersRef = [];
 
         monsterList.forEach(enemy => {
-            // Konverter til fuld combatant-data (til Library)
-            // Denne konvertering bruger nu den nye universelle logik!
             const combatant = convertToCombatant(enemy, null);
-            
-            // Sikr at ID er konsistent
             if (enemy.id) combatant.id = String(enemy.id);
-            
             newLibraryEntries.push(sanitizeData(combatant));
-
-            // Tilføj reference til Preset
             presetMonstersRef.push({
                 libId: combatant.id, 
                 name: combatant.name,
@@ -210,10 +187,7 @@ export const addEncounterToCombat = async (currentUser, encounter) => {
             });
         });
 
-        if (presetMonstersRef.length === 0) {
-            console.warn("No monsters in encounter to save.");
-            return false;
-        }
+        if (presetMonstersRef.length === 0) return false;
 
         await runTransaction(db, async (transaction) => {
             const libDoc = await transaction.get(libRef);
@@ -222,14 +196,12 @@ export const addEncounterToCombat = async (currentUser, encounter) => {
             let libraryItems = libDoc.exists() ? (libDoc.data().items || []) : [];
             let presetItems = presetsDoc.exists() ? (presetsDoc.data().items || []) : [];
 
-            // A. Gem FULL STATS i Library
             newLibraryEntries.forEach(entry => {
                 const idx = libraryItems.findIndex(i => String(i.id) === String(entry.id));
                 if (idx >= 0) libraryItems[idx] = entry; 
                 else libraryItems.push(entry); 
             });
 
-            // B. Gem Preset Reference
             const newPreset = {
                 id: encounter.id ? String(encounter.id) : Date.now().toString(),
                 name: encounter.name || "New Encounter",
@@ -243,10 +215,9 @@ export const addEncounterToCombat = async (currentUser, encounter) => {
             transaction.set(libRef, { items: libraryItems }, { merge: true });
             transaction.set(presetsRef, { items: presetItems }, { merge: true });
         });
-
         return true;
     } catch (e) {
-        console.error("Error saving encounter to library/presets:", e);
+        console.error("Error saving encounter:", e);
         return false;
     }
 };
@@ -277,14 +248,12 @@ export const syncPartyToCombat = async (currentUser, playerCharacters) => {
             let currentLib = libDoc.exists() ? (libDoc.data().items || []) : [];
             let currentPresets = presetsDoc.exists() ? (presetsDoc.data().items || []) : [];
             
-            // Opdater library med spillere
             partyCombatants.forEach(pc => {
                 const idx = currentLib.findIndex(l => l.linkedId === pc.linkedId);
                 if (idx >= 0) currentLib[idx] = pc;
                 else currentLib.push(pc);
             });
     
-            // Opdater "Party" preset
             const presetName = "Party"; 
             const cleanPresets = currentPresets.filter(p => p.name !== presetName);
             const newPreset = { id: 'party_preset', name: presetName, monsters: partyPresetRefs };
@@ -299,12 +268,16 @@ export const syncPartyToCombat = async (currentUser, playerCharacters) => {
     }
 };
 
-// --- LOGIC: SYNC HP ---
-export const syncHpToCombat = async (currentUser, campaignData, role, currentHp, maxHp, tempHp) => {
+// --- LOGIC: SYNC HP (FIXED & IMPROVED) ---
+export const syncHpToCombat = async (currentUser, campaignData, role, currentHp, maxHp, tempHp, targetUid) => {
+    // 1. Basic checks
     if (!campaignData || !campaignData.dmId || !currentUser) return;
-    if (role === 'dm') return; 
 
     const combatRef = doc(db, 'users', campaignData.dmId, 'combat', 'active');
+    
+    // 2. Determine who we are syncing FOR.
+    // Hvis targetUid er sat (fra Inspect Mode), brug den. Ellers brug currentUser (Spiller).
+    const syncTargetId = targetUid || currentUser.uid;
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -316,15 +289,28 @@ export const syncHpToCombat = async (currentUser, campaignData, role, currentHp,
             let hasChanges = false;
 
             const updatedCombatants = combatants.map(c => {
-                if (c.linkedId === currentUser.uid) {
-                    hasChanges = true;
-                    return { ...c, hp: currentHp, maxHp: maxHp, tempHp: tempHp };
+                // 3. Match Logic: Find combatant der tilhører syncTargetId
+                if (c.linkedId === syncTargetId) {
+                    
+                    // 4. Permission Check: Må JEG opdatere denne?
+                    const isOwner = currentUser.uid === syncTargetId;
+                    const isDM = currentUser.uid === campaignData.dmId;
+
+                    if (isOwner || isDM) {
+                        if (c.hp !== currentHp || c.maxHp !== maxHp || c.tempHp !== tempHp) {
+                            hasChanges = true;
+                            return { ...c, hp: currentHp, maxHp: maxHp, tempHp: tempHp };
+                        }
+                    } else {
+                        console.warn("Permission denied for HP sync.");
+                    }
                 }
                 return c;
             });
 
             if (hasChanges) {
                 transaction.update(combatRef, { combatants: updatedCombatants });
+                console.log(`HP Synced for ${syncTargetId} by ${currentUser.uid}`);
             }
         });
     } catch (e) {

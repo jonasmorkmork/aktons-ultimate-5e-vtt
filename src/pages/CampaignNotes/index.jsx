@@ -32,6 +32,9 @@ const CampaignNotes = () => {
     const [showCreateModal, setShowCreateModal] = useState(false); 
     const [showSearch, setShowSearch] = useState(false); 
     
+    // EDIT NOTEBOOK STATE
+    const [editingNotebook, setEditingNotebook] = useState(null);
+    
     // --- NY STATE: Mobil Sidebar ---
     const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
@@ -71,7 +74,6 @@ const CampaignNotes = () => {
     const fileTree = (() => {
         const folders = currentFiles.filter(n => n.type === 'folder');
         const files = currentFiles.filter(n => n.type === 'file');
-        
         const allIds = new Set(currentFiles.map(f => f.id));
 
         const rootFolders = folders.filter(f => !f.parentId || !allIds.has(f.parentId));
@@ -98,6 +100,46 @@ const CampaignNotes = () => {
         setActiveNotebook(null);
     };
 
+    // NOTEBOOK HANDLERS (CREATE / UPDATE / DELETE)
+    const handleCreateNotebook = async ({ name, image, color }) => {
+        try {
+            await addDoc(collection(db, "users", currentUser.uid, "notes"), {
+                name,
+                image,
+                color, 
+                type: 'notebook',
+                createdAt: Date.now()
+            });
+            setShowCreateModal(false);
+        } catch (e) { console.error(e); }
+    };
+
+    const handleUpdateNotebook = async ({ name, image, color }) => {
+        if (!editingNotebook) return;
+        try {
+            await updateDoc(doc(db, "users", currentUser.uid, "notes", editingNotebook.id), {
+                name,
+                image,
+                color,
+                updatedAt: Date.now()
+            });
+            setEditingNotebook(null); // Luk modal
+        } catch (e) { console.error(e); }
+    };
+
+    const handleEditNotebook = (notebook) => {
+        setEditingNotebook(notebook);
+    };
+
+    const handleDelete = async () => {
+        if (!confirmModal.noteId) return;
+        try {
+            await deleteDoc(doc(db, "users", currentUser.uid, "notes", confirmModal.noteId));
+            if (activeFile?.id === confirmModal.noteId) setActiveFile(null);
+        } catch (e) { console.error(e); }
+    };
+
+    // ITEM HANDLERS
     const initiateCreateItem = (type, parentId, blueprintKey = 'blank', forceName = null) => {
          if (forceName) {
             handleCreateItem(forceName, type, parentId, blueprintKey);
@@ -142,27 +184,6 @@ const CampaignNotes = () => {
 
     const handleUpdateContent = (html) => {
         setEditorContent(html);
-    };
-
-    const handleDelete = async () => {
-        if (!confirmModal.noteId) return;
-        try {
-            await deleteDoc(doc(db, "users", currentUser.uid, "notes", confirmModal.noteId));
-            if (activeFile?.id === confirmModal.noteId) setActiveFile(null);
-        } catch (e) { console.error(e); }
-    };
-
-    const handleCreateNotebook = async ({ name, image, color }) => {
-        try {
-            await addDoc(collection(db, "users", currentUser.uid, "notes"), {
-                name,
-                image,
-                color, 
-                type: 'notebook',
-                createdAt: Date.now()
-            });
-            setShowCreateModal(false);
-        } catch (e) { console.error(e); }
     };
 
     const handleSelectFile = (file) => {
@@ -319,8 +340,14 @@ const CampaignNotes = () => {
                 onCreate={(name) => { initiateCreateItem('file', null, 'blank', name); setShowSearch(false); }}
             />
 
-            {/* MODALS */}
-            <CreateNotebookModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onCreate={handleCreateNotebook} />
+            {/* SHARED MODAL FOR CREATE AND EDIT NOTEBOOK */}
+            <CreateNotebookModal 
+                isOpen={showCreateModal || !!editingNotebook} 
+                onClose={() => { setShowCreateModal(false); setEditingNotebook(null); }} 
+                onSubmit={editingNotebook ? handleUpdateNotebook : handleCreateNotebook}
+                initialData={editingNotebook}
+            />
+
             <InputModal 
                 isOpen={inputModal.isOpen} 
                 onClose={() => setInputModal({ ...inputModal, isOpen: false })} 
@@ -343,6 +370,7 @@ const CampaignNotes = () => {
                     notebooks={allNotes.filter(n => n.type === 'notebook')} 
                     onOpen={handleOpenNotebook}
                     onCreate={() => setShowCreateModal(true)}
+                    onEdit={handleEditNotebook} // NY PROP
                     onDelete={(id) => setConfirmModal({ isOpen: true, noteId: id, title: "Delete Notebook?", message: "All notes inside will be lost." })}
                 />
             )}

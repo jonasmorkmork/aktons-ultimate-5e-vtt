@@ -209,23 +209,17 @@ const CampaignManager = () => {
         
         setIsProcessing(true);
         try {
-            // FIX: Hent kampagnen først for at sikre, at spilleren stadig er med
             const campaignRef = doc(db, "campaigns", campaignId);
             const campaignSnap = await getDoc(campaignRef);
             
             if (campaignSnap.exists()) {
                 const data = campaignSnap.data();
-                
-                // SIKKERHEDSTJEK: Er jeg stadig i 'players' listen?
                 if (!data.players || !data.players.includes(currentUser.uid)) {
                     showToast("You have been removed from this campaign.", 'error');
-                    // Fjern den fra spillerens lokale liste, så den forsvinder fra UI
                     setJoinedCampaigns(prev => prev.filter(c => c.id !== campaignId));
                     setIsProcessing(false);
                     return;
                 }
-
-                // Hvis godkendt, opdater karakteren
                 await updateDoc(campaignRef, { [`playerCharacters.${currentUser.uid}`]: character });
                 if (setIsChanging) setIsChanging(false);
                 showToast("Character Assigned!");
@@ -319,7 +313,8 @@ const CampaignManager = () => {
                                             player={p} 
                                             isDm={isDmForActive}
                                             onSendToCombat={handleSendToCombat} 
-                                            onInspect={setInspectingChar}
+                                            // FIX: Vi tilføjer ownerId til karakteren når vi inspicerer
+                                            onInspect={(char) => setInspectingChar({ ...char, ownerId: uid })}
                                             onKick={handleKickPlayer}
                                         />
                                     ))}
@@ -394,7 +389,7 @@ const CampaignManager = () => {
             </div>
 
             {/* --- MODALS & TOASTS --- */}
-
+            {/* ... (Message Modal, Incoming Message, Delete Confirmation uændret) ... */}
             {/* Message Modal */}
             {showMessageModal && (
                 <div className="fixed inset-0 z-[250] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
@@ -446,7 +441,7 @@ const CampaignManager = () => {
                     <div className="bg-slate-900 border border-slate-700 w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-xl shadow-2xl relative flex flex-col">
                         <div className="absolute top-4 right-4 z-50"><button onClick={() => setInspectingChar(null)} className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-full shadow-lg"><CloseIcon /></button></div>
                         <div className="bg-amber-900/80 text-amber-100 text-center text-xs font-bold uppercase py-1 tracking-widest">Spectator Mode (Read Only)</div>
-                        <div className="flex-1 overflow-y-auto custom-scrollbar"><CharacterSheetView character={inspectingChar} onUpdate={() => {}} onBack={() => setInspectingChar(null)} onExport={() => {}} saveStatus="Viewing" /></div>
+                        <CharacterSheetView character={inspectingChar} onUpdate={() => {}} onBack={() => setInspectingChar(null)} onExport={() => {}} saveStatus="Viewing" />
                     </div>
                 </div>
             )}

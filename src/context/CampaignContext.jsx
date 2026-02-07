@@ -21,13 +21,9 @@ export function CampaignProvider({ children }) {
         return saved ? JSON.parse(saved) : null;
     });
 
-    // OPDATERET: Nu sender den også til Firebase (async)
     const sendEncounterToCombat = async (encounter) => {
-        // Gem lokalt (som før)
         setActiveEncounterData(encounter);
         localStorage.setItem('vtt_active_encounter', JSON.stringify(encounter));
-        
-        // Send til Firebase (Active Combat)
         return await CombatSync.addEncounterToCombat(currentUser, encounter);
     };
 
@@ -110,7 +106,6 @@ export function CampaignProvider({ children }) {
     };
 
     // --- WRAPPER FUNKTIONER ---
-    // Disse kalder logikken i CombatSync.js med den nødvendige context (currentUser, campaignData)
     
     const sendToCombat = (char, uid) => 
         CombatSync.sendCharacterToCombat(currentUser, char, uid);
@@ -118,8 +113,9 @@ export function CampaignProvider({ children }) {
     const syncPartyToCombat = (playerCharacters) => 
         CombatSync.syncPartyToCombat(currentUser, playerCharacters);
 
-    const syncHpToCombat = (currentHp, maxHp, tempHp) => 
-        CombatSync.syncHpToCombat(currentUser, campaignData, role, currentHp, maxHp, tempHp);
+    // FIX: Accepterer nu targetUid (valgfri)
+    const syncHpToCombat = (currentHp, maxHp, tempHp, targetUid) => 
+        CombatSync.syncHpToCombat(currentUser, campaignData, role, currentHp, maxHp, tempHp, targetUid);
 
     const sendItemToCharacter = (targetUid, item) => 
         CombatSync.sendItemToCharacter(campaignData, targetUid, item);

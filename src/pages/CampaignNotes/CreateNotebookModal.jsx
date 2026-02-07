@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Standard "Clean" farver
 export const NOTEBOOK_COLORS = [
@@ -11,25 +11,48 @@ export const NOTEBOOK_COLORS = [
     { name: 'Slate', hex: '#64748b', border: 'border-slate-500' },
 ];
 
-const CreateNotebookModal = ({ isOpen, onClose, onCreate }) => {
+const CreateNotebookModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
     const [name, setName] = useState("");
     const [image, setImage] = useState("");
     const [selectedColor, setSelectedColor] = useState(NOTEBOOK_COLORS[0]);
+
+    // Effekt: Når modalen åbner, tjek om vi redigerer eller opretter ny
+    useEffect(() => {
+        if (isOpen) {
+            if (initialData) {
+                // EDIT MODE: Udfyld felter med eksisterende data
+                setName(initialData.name || "");
+                setImage(initialData.image || "");
+                
+                // Find den rigtige farve i listen baseret på hex, eller brug den gemte farve
+                const colorMatch = NOTEBOOK_COLORS.find(c => c.hex === initialData.color?.hex) || initialData.color || NOTEBOOK_COLORS[0];
+                setSelectedColor(colorMatch);
+            } else {
+                // CREATE MODE: Nulstil felter
+                setName("");
+                setImage("");
+                setSelectedColor(NOTEBOOK_COLORS[0]);
+            }
+        }
+    }, [isOpen, initialData]);
 
     if (!isOpen) return null;
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!name.trim()) return;
-        onCreate({ name, image, color: selectedColor });
-        setName(""); setImage(""); setSelectedColor(NOTEBOOK_COLORS[0]);
+        
+        // Kald onSubmit med de nye værdier
+        onSubmit({ name, image, color: selectedColor });
         onClose();
     };
 
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={onClose}>
             <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl shadow-2xl max-w-md w-full relative" onClick={e => e.stopPropagation()}>
-                <h3 className="text-xl font-bold text-white mb-6">Create New Notebook</h3>
+                <h3 className="text-xl font-bold text-white mb-6">
+                    {initialData ? "Edit Notebook" : "Create New Notebook"}
+                </h3>
                 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {/* Name */}
@@ -88,7 +111,7 @@ const CreateNotebookModal = ({ isOpen, onClose, onCreate }) => {
                             disabled={!name.trim()}
                             className="px-6 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
-                            Create Notebook
+                            {initialData ? "Save Changes" : "Create Notebook"}
                         </button>
                     </div>
                 </form>

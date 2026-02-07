@@ -43,16 +43,42 @@ const CombatPresets = ({ logic }) => {
         showNotification("Preset Updated");
     };
 
+    // --- FIX: Nu slår den BÅDE spillere og monstre op i library ---
     const runPreset = (preset) => {
         const players = [];
         const monsters = [];
+        
         preset.monsters.forEach(entry => {
+            // 1. Fælles opslag: Find den fulde data (stats) i library baseret på ID
+            const fullStatblock = library.find(lib => String(lib.id) === String(entry.libId));
+
             if (entry.type === 'player') {
-                players.push({...entry, id: Date.now() + Math.random()}); 
+                if (fullStatblock) {
+                    // Hvis spilleren findes i library, brug de fulde stats (HP, AC osv.)
+                    players.push({
+                        ...fullStatblock, 
+                        ...entry, // Overskriv evt. navn fra preset
+                        id: Date.now() + Math.random() // Nyt unikt ID til tracker
+                    }); 
+                } else {
+                    // Fallback hvis spilleren ikke findes
+                    players.push({...entry, id: Date.now() + Math.random()});
+                }
             } else {
-                monsters.push(entry);
+                // Samme logik for monstre
+                if (fullStatblock) {
+                    monsters.push({
+                        ...fullStatblock,
+                        ...entry,
+                        id: fullStatblock.id // Bevar ID eller generer nyt efter behov
+                    });
+                } else {
+                    console.warn(`Could not hydrate monster: ${entry.name}`);
+                    monsters.push(entry);
+                }
             }
         });
+
         if (players.length > 0) {
             setInitModal({ players, monsters });
         } else {
@@ -106,7 +132,6 @@ const CombatPresets = ({ logic }) => {
                                         {library.filter(l => l.type !== 'player' && l.name.toLowerCase().includes(presetSearch.toLowerCase())).map(lib => (
                                             <div key={lib.id} onClick={() => addToPresetDraft(lib)} className="flex justify-between items-center p-2 rounded cursor-pointer mb-1 hover:bg-slate-800 border border-transparent hover:border-slate-600 text-slate-300 transition-colors group">
                                                 <span className="text-xs group-hover:text-white">{lib.name}</span>
-                                                {/* RETTELSE HER: */}
                                                 <span className="text-[10px] text-slate-600 group-hover:text-emerald-500">
                                                     {parseInt(lib.bonus) >= 0 ? '+' : ''}{lib.bonus}
                                                 </span>

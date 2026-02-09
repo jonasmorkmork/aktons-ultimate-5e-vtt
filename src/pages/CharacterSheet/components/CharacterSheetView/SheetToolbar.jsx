@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Icons } from '../CharacterIcons';
+import { Icons, MonitorIcon, SmartphoneIcon } from '../CharacterIcons'; 
 import { THEMES } from './ThemeConfig';
 import ThemeEditorModal from './ThemeEditorModal'; 
 import { useCampaign } from '../../../../context/CampaignContext'; 
 
-const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, onOpenMessage, theme }) => {
+const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, onOpenMessage, theme, isMobileView, onToggleView }) => {
     const [showThemeMenu, setShowThemeMenu] = useState(false);
     const [showEditor, setShowEditor] = useState(false); 
     const handleChange = (field, value) => onUpdate({ [field]: value });
@@ -14,7 +14,6 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
 
     // LONG REST LOGIK
     const handleLongRestTrigger = () => {
-        // 1. Reset HP
         const maxHp = parseInt(c.hp?.max || 10);
         const newHp = { 
             ...c.hp, 
@@ -22,21 +21,17 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
             temp: 0 
         };
         
-        // 2. Reset Hit Dice (spent = 0 betyder alle er tilgængelige)
         const newHitDice = { 
             ...c.hitDice, 
             spent: 0 
         };
         
-        // 3. Opdater Character Sheet
         onUpdate({ hp: newHp, hitDice: newHitDice });
         
-        // 4. Sync til DM Combat
         if (syncHpToCombat) {
             syncHpToCombat(maxHp, maxHp, 0);
         }
         
-        // 5. Kald original prop hvis nødvendigt (f.eks. for notifikationer)
         if (onLongRest) onLongRest(); 
     };
 
@@ -49,22 +44,40 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
                 onUpdate={onUpdate} 
             />
 
+            {/* Toolbar Container */}
             <div className={`relative z-[100] flex flex-wrap items-center justify-between gap-3 ${theme.bgPanel} border ${theme.border} p-3 rounded-xl shadow-lg transition-colors duration-300`}>
                 
+                {/* Venstre side: Back, View Toggle, Export */}
                 <div className="flex items-center gap-3">
                     <button onClick={onBack} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
                         <Icons.ArrowLeft /> Back
                     </button>
+                    
                     <div className={`h-6 w-px ${theme.border}`}></div>
-                    <button onClick={onExport} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
+
+                    {/* NY KNAP: Toggle View */}
+                    <button 
+                        onClick={onToggleView} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}
+                        title={isMobileView ? "Switch to Desktop View" : "Switch to Mobile View"}
+                    >
+                        {isMobileView ? <MonitorIcon /> : <SmartphoneIcon />}
+                        <span className="hidden sm:inline">{isMobileView ? "Desktop" : "Mobile"}</span>
+                    </button>
+
+                    <div className={`h-6 w-px ${theme.border} hidden md:block`}></div>
+                    
+                    <button onClick={onExport} className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
                         <Icons.Download /> Export
                     </button>
-                    {saveStatus !== 'Idle' && <span className={`text-[10px] font-bold ${theme.subText} uppercase tracking-widest`}>{saveStatus}</span>}
+                    {saveStatus !== 'Idle' && <span className={`text-[10px] font-bold ${theme.subText} uppercase tracking-widest ml-2`}>{saveStatus}</span>}
                 </div>
                 
-                <div className="flex items-center gap-2">
+                {/* Højre side: Theme, Rest, Msg, Toggles */}
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full pb-1 md:pb-0">
                     
-                    <div className="relative flex gap-1">
+                    {/* Theme Dropdown */}
+                    <div className="relative flex gap-1 shrink-0">
                         <button 
                             onClick={() => setShowThemeMenu(!showThemeMenu)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}
@@ -103,19 +116,20 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
 
                     <div className={`h-6 w-px ${theme.border}`}></div>
 
-                    <button onClick={handleLongRestTrigger} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
+                    <button onClick={handleLongRestTrigger} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text} shrink-0`}>
                         <Icons.Moon /> Long Rest
                     </button>
 
-                    <button onClick={onOpenMessage} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                        Message DM
+                    <button onClick={onOpenMessage} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text} shrink-0`}>
+                        <Icons.MessageIcon /> Msg DM
                     </button>
-                    <button onClick={() => handleChange('heroicInspiration', !c.heroicInspiration)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border transition-all ${c.heroicInspiration ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_10px_rgba(217,119,6,0.4)]' : `${theme.button} ${theme.border} ${theme.subText} hover:border-zinc-500`}`}>
-                        <Icons.CheckSquare checked={c.heroicInspiration} /> Heroic Inspiration
+                    
+                    <button onClick={() => handleChange('heroicInspiration', !c.heroicInspiration)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border transition-all shrink-0 ${c.heroicInspiration ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_10px_rgba(217,119,6,0.4)]' : `${theme.button} ${theme.border} ${theme.subText} hover:border-zinc-500`}`}>
+                        <Icons.CheckSquare checked={c.heroicInspiration} /> Heroic Insp.
                     </button>
-                    <button onClick={() => handleChange('isSpellcaster', !c.isSpellcaster)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border transition-all ${c.isSpellcaster ? `${theme.accentBg} ${theme.accentBorder} text-white shadow-[0_0_10px_rgba(185,28,28,0.4)]` : `${theme.button} ${theme.border} ${theme.subText} hover:border-zinc-500`}`}>
-                        <Icons.Flame /> Spellcaster
+                    
+                    <button onClick={() => handleChange('isSpellcaster', !c.isSpellcaster)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border transition-all shrink-0 ${c.isSpellcaster ? `${theme.accentBg} ${theme.accentBorder} text-white shadow-[0_0_10px_rgba(185,28,28,0.4)]` : `${theme.button} ${theme.border} ${theme.subText} hover:border-zinc-500`}`}>
+                        <Icons.Flame /> Magic
                     </button>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../firebase'; 
@@ -25,6 +25,7 @@ const CampaignNotes = () => {
     
     // Global Data
     const [allNotes, setAllNotes] = useState([]);
+    const [isLoading, setIsLoading] = useState(true); // NY: Loading state
     
     // View State
     const [view, setView] = useState('menu'); 
@@ -35,7 +36,7 @@ const CampaignNotes = () => {
     // EDIT NOTEBOOK STATE
     const [editingNotebook, setEditingNotebook] = useState(null);
     
-    // --- NY STATE: Mobil Sidebar ---
+    // Mobil Sidebar
     const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
     // MODAL STATES
@@ -51,6 +52,9 @@ const CampaignNotes = () => {
     const [title, setTitle] = useState("");
     const [saveStatus, setSaveStatus] = useState("saved");
     
+    // OPTIMERING: Spor hvad vi sidst gemte for at undgå loops
+    const lastSavedData = useRef({ content: "", name: "" });
+    
     // Drag/Drop State
     const [draggedItem, setDraggedItem] = useState(null);
     const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
@@ -58,10 +62,12 @@ const CampaignNotes = () => {
     // 1. FETCH NOTES
     useEffect(() => {
         if (!currentUser) return;
+        setIsLoading(true);
         const q = query(collection(db, "users", currentUser.uid, "notes"), orderBy("createdAt", "desc"));
         const unsub = onSnapshot(q, (snapshot) => {
             const notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setAllNotes(notes);
+            setIsLoading(false);
         });
         return () => unsub();
     }, [currentUser]);
@@ -168,9 +174,13 @@ const CampaignNotes = () => {
             const docRef = await addDoc(collection(db, "users", currentUser.uid, "notes"), newItem);
             
             if (type === 'file') {
-                setActiveFile({ id: docRef.id, ...newItem });
+                const newFile = { id: docRef.id, ...newItem };
+                setActiveFile(newFile);
                 setTitle(name);
                 setEditorContent("");
+                // Initialiser lastSavedData for den nye fil
+                lastSavedData.current = { content: "", name: name };
+                
                 if (parentId) {
                     setExpandedFolders(prev => ({ ...prev, [parentId]: true }));
                 }
@@ -190,6 +200,8 @@ const CampaignNotes = () => {
         setActiveFile(file);
         setTitle(file.name);
         setEditorContent(file.content || "");
+        // Opdater referencen, så vi ikke gemmer straks vi åbner en fil
+        lastSavedData.current = { content: file.content || "", name: file.name };
         setShowMobileSidebar(false);
     };
 
@@ -197,18 +209,26 @@ const CampaignNotes = () => {
         setExpandedFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }));
     };
 
-    // Auto-Save Logic
+    // --- OPTIMERET AUTO-SAVE ---
     useEffect(() => {
         if (!activeFile || !currentUser) return;
         
-        if (activeFile.content === editorContent && activeFile.name === title) {
+        // Tjek om der faktisk er ændringer i forhold til hvad vi SIDST gemte (lokalt)
+        // Dette stopper loopet hvor DB-opdatering trigger ny save
+        if (editorContent === lastSavedData.current.content && title === lastSavedData.current.name) {
              setSaveStatus("saved");
              return;
         }
 
         setSaveStatus("saving");
         const timer = setTimeout(async () => {
+            // Dobbelt tjek før vi sender (i tilfælde af hurtige skift)
+            if (!activeFile) return;
+
             try {
+                // Opdater ref FØR vi kalder DB for at undgå race conditions
+                lastSavedData.current = { content: editorContent, name: title };
+
                 await updateDoc(doc(db, "users", currentUser.uid, "notes", activeFile.id), {
                     content: editorContent,
                     name: title,
@@ -219,7 +239,8 @@ const CampaignNotes = () => {
                 console.error(e); 
                 setSaveStatus("error"); 
             }
-        }, 1500);
+        }, 2000); // Øget til 2 sekunder for at spare skrive-operationer
+
         return () => clearTimeout(timer);
     }, [editorContent, title, activeFile, currentUser]);
 
@@ -329,6 +350,10 @@ const CampaignNotes = () => {
         });
     };
 
+    if (isLoading) {
+        return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-500">Loading Notebooks...</div>;
+    }
+
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
             
@@ -370,7 +395,7 @@ const CampaignNotes = () => {
                     notebooks={allNotes.filter(n => n.type === 'notebook')} 
                     onOpen={handleOpenNotebook}
                     onCreate={() => setShowCreateModal(true)}
-                    onEdit={handleEditNotebook} // NY PROP
+                    onEdit={handleEditNotebook} 
                     onDelete={(id) => setConfirmModal({ isOpen: true, noteId: id, title: "Delete Notebook?", message: "All notes inside will be lost." })}
                 />
             )}
@@ -445,13 +470,11 @@ const CampaignNotes = () => {
                     {/* --- MAIN EDITOR AREA --- */}
                     <div className="flex-1 flex flex-col h-full bg-slate-950 overflow-hidden w-full">
                         
-                        {/* MOBIL TOP BAR (FIXED: Added pl-16 for global menu & moved files button to right) */}
+                        {/* MOBIL TOP BAR */}
                         <div className="md:hidden flex items-center justify-between p-3 border-b border-slate-800 bg-slate-900 text-white shrink-0 pl-16">
-                            
                             <span className="font-bold truncate px-2 text-sm text-slate-200 flex-1">
                                 {activeFile ? activeFile.name : activeNotebook.name}
                             </span>
-                            
                             <button onClick={() => setShowMobileSidebar(true)} className="text-slate-400 hover:text-white flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded border border-slate-700">
                                 <span className="text-[10px] font-bold uppercase">Files</span>
                                 <MenuIcon />
@@ -460,8 +483,6 @@ const CampaignNotes = () => {
 
                         {activeFile ? (
                             <div className="flex-1 overflow-hidden relative flex flex-col">
-                                
-                                {/* Desktop Title Bar */}
                                 <div className="hidden md:flex h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm shrink-0 items-center sticky top-0 z-10">
                                     <div className="max-w-3xl w-full mx-auto px-8 flex justify-between items-center">
                                         <input value={title} onChange={(e) => setTitle(e.target.value)} className="bg-transparent text-amber-500 font-bold outline-none text-2xl w-full max-w-lg placeholder-slate-600 focus:border-b border-amber-500/30 transition-colors" placeholder="Page Title" />
@@ -475,7 +496,6 @@ const CampaignNotes = () => {
 
                                 <div className="flex-1 overflow-y-auto custom-scrollbar cursor-text px-4 md:px-8 py-4 md:py-8">
                                     <div className="max-w-3xl mx-auto min-h-full">
-                                        {/* Mobil Title Input */}
                                         <div className="md:hidden mb-4 border-b border-slate-800 pb-2">
                                             <input value={title} onChange={(e) => setTitle(e.target.value)} className="bg-transparent text-amber-500 font-bold outline-none text-xl w-full placeholder-slate-600" placeholder="Page Title" />
                                             <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 mt-1">
@@ -493,7 +513,6 @@ const CampaignNotes = () => {
                                                 if (target) {
                                                     handleSelectFile(target);
                                                 } else {
-                                                    // FIX: Direkte oprettelse (forceName=targetName), parentId=null (root)
                                                     initiateCreateItem('file', null, 'blank', targetName);
                                                 }
                                             }} 

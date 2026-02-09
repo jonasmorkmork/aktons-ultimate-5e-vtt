@@ -6,8 +6,8 @@ import { db } from '../../firebase';
 import { 
     collection, query, where, 
     getDocs, addDoc, deleteDoc, updateDoc, doc, getDoc, 
-    arrayUnion, arrayRemove, deleteField, onSnapshot, serverTimestamp 
-} from 'firebase/firestore';
+    arrayUnion, arrayRemove, deleteField, onSnapshot, serverTimestamp, limit 
+} from 'firebase/firestore'; 
 import CharacterSheetView from '../CharacterSheet/components/CharacterSheetView';
 
 // --- COMPONENTS ---
@@ -44,7 +44,7 @@ const CampaignManager = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     
     // --- INSPECT STATE ---
-    const [inspectingChar, setInspectingChar] = useState(null); // Read only
+    const [inspectingChar, setInspectingChar] = useState(null); 
 
     // STATES
     const [showMessageModal, setShowMessageModal] = useState(false);
@@ -97,19 +97,36 @@ const CampaignManager = () => {
             setIsLoading(false);
         };
         fetchData();
-    }, [currentUser, isProcessing]); 
+    }, [currentUser]);
 
-    // MESSAGES LISTENER
+    // MESSAGES LISTENER - FIXED: FJERNET AUTO-READ LOOP
     useEffect(() => {
         if (!activeCampaignId || !currentUser) return;
-        const q = query(collection(db, "campaigns", activeCampaignId, "messages"), where("to", "==", "DM"), where("read", "==", false));
+        
+        // Henter kun beskeder sendt TIL denne bruger (hvis DM: "DM", hvis Spiller: UID eller "ALL")
+        // Note: For simpelheds skyld lytter vi her efter "DM" beskeder hvis man er DM.
+        // Hvis man er spiller skal man ideelt set lytte efter sit eget ID. 
+        // Men din nuværende logik ser ud til kun at håndtere "To: DM". 
+        // Lad os holde det simpelt og sikkert:
+        
+        const q = query(
+            collection(db, "campaigns", activeCampaignId, "messages"), 
+            where("to", "==", "DM"), 
+            where("read", "==", false),
+            limit(20) // Begræns antal for at undgå massivt load
+        );
+        
         const unsubscribe = onSnapshot(q, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
                 if (change.type === "added") {
                     const msg = change.doc.data();
                     const msgId = change.doc.id;
-                    setMessageQueue(prev => [...prev, { ...msg, id: msgId }]);
-                    updateDoc(doc(db, "campaigns", activeCampaignId, "messages", msgId), { read: true }).catch(console.error);
+                    
+                    // FIX: Vi tilføjer kun til køen lokalt. Vi opdaterer IKKE databasen her.
+                    setMessageQueue(prev => {
+                        if (prev.some(m => m.id === msgId)) return prev; // Undgå dubletter
+                        return [...prev, { ...msg, id: msgId }];
+                    });
                 }
             });
         });
@@ -131,6 +148,27 @@ const CampaignManager = () => {
     };
 
     // --- HANDLERS ---
+
+    // FIX: Manuel dismiss funktion
+    const handleDismissMessage = async () => {
+        if (messageQueue.length === 0) return;
+        
+        const msgToDismiss = messageQueue[0];
+        
+        // 1. Fjern fra lokal kø med det samme (UI responsivitet)
+        setMessageQueue(prev => prev.slice(1));
+        
+        // 2. Opdater i databasen (marker som læst)
+        if (msgToDismiss.id && activeCampaignId) {
+            try {
+                await updateDoc(doc(db, "campaigns", activeCampaignId, "messages", msgToDismiss.id), { 
+                    read: true 
+                });
+            } catch (e) {
+                console.error("Failed to mark message as read:", e);
+            }
+        }
+    };
 
     const handleCreateCampaign = async (e) => {
         e.preventDefault();
@@ -169,9 +207,20 @@ const CampaignManager = () => {
             }
             const campaignDoc = querySnapshot.docs[0];
             const campaignData = campaignDoc.data();
+            
             if (!campaignData.players.includes(currentUser.uid)) {
                 await updateDoc(doc(db, "campaigns", campaignDoc.id), { players: arrayUnion(currentUser.uid) });
             }
+
+            const newJoinedParams = { id: campaignDoc.id, ...campaignData };
+            if (!newJoinedParams.players.includes(currentUser.uid)) {
+                newJoinedParams.players.push(currentUser.uid);
+            }
+            setJoinedCampaigns(prev => {
+                if (prev.find(c => c.id === campaignDoc.id)) return prev;
+                return [...prev, newJoinedParams];
+            });
+
             setJoinCodeInput("");
             connectToCampaign(campaignDoc.id);
             showToast("Campaign Joined!");
@@ -196,10 +245,7 @@ const CampaignManager = () => {
                 [`playerCharacters.${uidToKick}`]: deleteField()
             });
             showToast(`${playerName} removed.`);
-        } catch (e) { 
-            console.error("Kick failed:", e);
-            showToast("Kick failed", "error"); 
-        }
+        } catch (e) { console.error("Kick failed:", e); showToast("Kick failed", "error"); }
     };
 
     const handleAssignCharacter = async (campaignId, charId, setIsChanging) => {
@@ -221,13 +267,17 @@ const CampaignManager = () => {
                     return;
                 }
                 await updateDoc(campaignRef, { [`playerCharacters.${currentUser.uid}`]: character });
+                setJoinedCampaigns(prev => prev.map(c => {
+                    if (c.id === campaignId) {
+                        const updatedChars = { ...c.playerCharacters, [currentUser.uid]: character };
+                        return { ...c, playerCharacters: updatedChars };
+                    }
+                    return c;
+                }));
                 if (setIsChanging) setIsChanging(false);
                 showToast("Character Assigned!");
             }
-        } catch (error) { 
-            console.error("Assignment error:", error);
-            showToast("Assignment failed", 'error'); 
-        }
+        } catch (error) { console.error("Assignment error:", error); showToast("Assignment failed", 'error'); }
         setIsProcessing(false);
     };
 
@@ -313,7 +363,6 @@ const CampaignManager = () => {
                                             player={p} 
                                             isDm={isDmForActive}
                                             onSendToCombat={handleSendToCombat} 
-                                            // FIX: Vi tilføjer ownerId til karakteren når vi inspicerer
                                             onInspect={(char) => setInspectingChar({ ...char, ownerId: uid })}
                                             onKick={handleKickPlayer}
                                         />
@@ -389,8 +438,6 @@ const CampaignManager = () => {
             </div>
 
             {/* --- MODALS & TOASTS --- */}
-            {/* ... (Message Modal, Incoming Message, Delete Confirmation uændret) ... */}
-            {/* Message Modal */}
             {showMessageModal && (
                 <div className="fixed inset-0 z-[250] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
                     <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-xl shadow-2xl p-6 relative">
@@ -410,11 +457,12 @@ const CampaignManager = () => {
                 </div>
             )}
             
-            {/* Incoming Message */}
+            {/* Incoming Message - FIXED BUTTON */}
             {activeIncomingMsg && (
                 <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[400] w-[90%] max-w-lg animate-in slide-in-from-top-4 duration-300">
                     <div className="bg-slate-900/95 border-2 border-amber-500 rounded-xl shadow-[0_0_50px_rgba(245,158,11,0.3)] p-6 relative overflow-hidden backdrop-blur-md">
-                        <button onClick={() => setMessageQueue(prev => prev.slice(1))} className="absolute top-2 right-2 text-slate-500 hover:text-white p-2"><CloseIcon /></button>
+                        {/* FIX: Knappen kalder nu handleDismissMessage */}
+                        <button onClick={handleDismissMessage} className="absolute top-2 right-2 text-slate-500 hover:text-white p-2"><CloseIcon /></button>
                         <div className="flex gap-4">
                             <div className="bg-amber-900/30 p-3 rounded-full h-fit border border-amber-700/50"><MessageIcon className="text-amber-500" /></div>
                             <div><h4 className="text-amber-500 font-bold uppercase text-xs tracking-widest mb-1">Message from {activeIncomingMsg.sender}</h4><p className="text-lg font-serif text-white leading-relaxed">{activeIncomingMsg.text}</p></div>

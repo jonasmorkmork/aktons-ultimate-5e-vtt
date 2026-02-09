@@ -18,64 +18,50 @@ import SheetMobileNav from './SheetMobileNav';
 import MessageToast from './MessageToast';
 import SendMessageModal from './SendMessageModal';
 
-const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus }) => {
+const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus, isMobileView, onToggleView }) => {
     const { currentUser } = useAuth();
     const { campaignData, activeCampaignId } = useCampaign(); 
 
-    // --- LIVE UPDATE LOGIK STARTER HER ---
-    // 1. Vi opretter en lokal state til karakteren, så vi kan opdatere den live
+    // --- LIVE UPDATE LOGIK ---
     const [liveChar, setLiveChar] = useState(character);
 
-    // 2. Hvis parent (props) ændrer sig, opdater vores state
     useEffect(() => {
         setLiveChar(character);
     }, [character]);
 
-    // 3. LYT TIL DATABASEN (Fix til Live Items)
     useEffect(() => {
         if (!currentUser || !character?.id) return;
-
-        // Vi lytter på dokumentet hvor alle brugerens karakterer ligger
         const charDocRef = doc(db, "users", currentUser.uid, "data", "characters");
         
         const unsub = onSnapshot(charDocRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 const charList = data.list || [];
-                
-                // Find præcis denne karakter i listen
                 const foundChar = charList.find(ch => ch.id === character.id);
-                
                 if (foundChar) {
-                    // Opdater vores view med den nyeste data fra databasen
-                    // Dette fanger nye items, hp ændringer fra andre kilder osv.
                     setLiveChar(prev => {
-                        // Lille tjek for at undgå unødvendige renders
                         if (JSON.stringify(prev) === JSON.stringify(foundChar)) return prev;
                         return foundChar;
                     });
                 }
             }
         });
-
         return () => unsub();
     }, [currentUser, character?.id]);
 
-    // Vi bruger nu 'liveChar' i stedet for 'character' prop til at bygge 'c'
     const c = { ...createNewCharacter(), ...liveChar };
-    // --- LIVE UPDATE LOGIK SLUT ---
+    // ------------------------
 
     const [mobileTab, setMobileTab] = useState('stats');
     
-    // Sikr at arrays/objekter eksisterer
+    // Sikr data
     c.stats = c.stats || { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
     c.hp = c.hp || { current: 10, max: 10, temp: 0 };
     c.hitDice = c.hitDice || { spent: 0, total: 1, type: "d10" };
     c.spellSlots = c.spellSlots || createNewCharacter().spellSlots;
 
-    // --- THEME LOGIC ---
+    // --- THEME ---
     const theme = getTheme(c.theme || 'default');
-    
     const customStyle = c.theme === 'custom' && c.customTheme ? {
         '--c-panel': c.customTheme.panel || '#18181b',
         '--c-border': c.customTheme.border || '#27272a',
@@ -84,17 +70,16 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
         '--c-subtext': c.customTheme.subText || '#71717a',
     } : {};
 
-    // --- CROPPER & MESSAGE STATES ---
+    // --- STATES ---
     const [cropImage, setCropImage] = useState(null);
     const [showCropper, setShowCropper] = useState(false);
     const [messageQueue, setMessageQueue] = useState([]); 
     const [showDmMsgModal, setShowDmMsgModal] = useState(false);
 
-    // --- SYNC TIL KAMPAGNE ---
+    // --- SYNC ---
     useEffect(() => {
         if (!activeCampaignId || !currentUser || !campaignData?.playerCharacters) return;
         const myEntry = campaignData.playerCharacters[currentUser.uid];
-        // Tjekker på 'c' som nu er live-opdateret
         if (myEntry && (myEntry.name !== c.name || myEntry.class !== c.class || myEntry.level !== c.level)) {
             const timer = setTimeout(() => {
                 updateDoc(doc(db, "campaigns", activeCampaignId), {
@@ -138,7 +123,7 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
                 text, sender: c.name || "Player", senderId: currentUser.uid, to: "DM", timestamp: serverTimestamp(), read: false 
             });
             setShowDmMsgModal(false);
-        } catch (error) { console.error("Fejl ved afsendelse:", error); }
+        } catch (error) { console.error("Fejl:", error); }
     };
 
     const handleLongRest = () => {
@@ -171,9 +156,17 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
         ? { backgroundImage: `url(${c.customTheme.bgImage})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }
         : {};
 
+    // --- RENDER LOGIC ---
+    const gridContainerClass = isMobileView 
+        ? "grid grid-cols-1 gap-6 items-start" 
+        : "grid grid-cols-1 md:grid-cols-12 gap-6 items-start";
+
+    // RETTELSE: Øget padding i bunden til pb-40 når i mobil-mode
+    const containerPadding = isMobileView ? "p-2 pb-40" : "p-4 md:p-8 pb-8";
+
     return (
         <div 
-            className={`min-h-screen p-2 md:p-8 pb-24 md:pb-8 fade-in relative transition-colors duration-300 ${theme.bg} ${theme.text}`}
+            className={`min-h-screen fade-in relative transition-colors duration-300 ${containerPadding} ${theme.bg} ${theme.text}`}
             style={{ ...customStyle, ...bgStyle }}
         >
             {c.theme === 'custom' && c.customTheme?.bgImage && <div className="fixed inset-0 bg-black/60 z-[-1]" />}
@@ -183,29 +176,52 @@ const CharacterSheetView = ({ character, onUpdate, onBack, onExport, saveStatus 
             <SendMessageModal isOpen={showDmMsgModal} onClose={() => setShowDmMsgModal(false)} onSend={handleSendToDM} />
 
             <div className="max-w-7xl mx-auto space-y-6">
-                <SheetToolbar theme={theme} c={c} onUpdate={onUpdate} onBack={onBack} onExport={onExport} saveStatus={saveStatus} onLongRest={handleLongRest} onOpenMessage={() => setShowDmMsgModal(true)} />
+                <SheetToolbar 
+                    theme={theme} 
+                    c={c} 
+                    onUpdate={onUpdate} 
+                    onBack={onBack} 
+                    onExport={onExport} 
+                    saveStatus={saveStatus} 
+                    onLongRest={handleLongRest} 
+                    onOpenMessage={() => setShowDmMsgModal(true)} 
+                    isMobileView={isMobileView} 
+                    onToggleView={onToggleView} 
+                />
+                
                 <SheetHeader theme={theme} c={c} onUpdate={onUpdate} onImageSelect={handleImageSelect} />
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-                    <div className={`md:col-span-3 ${mobileTab !== 'stats' ? 'hidden md:block' : 'fade-in'}`}>
+                {/* DYNAMISK GRID LAYOUT */}
+                <div className={gridContainerClass}>
+                    
+                    {/* STATS */}
+                    <div className={`${isMobileView ? (mobileTab === 'stats' ? 'block fade-in' : 'hidden') : 'md:col-span-3'}`}>
                         <SheetStats theme={theme} c={c} onUpdate={onUpdate} />
                     </div>
-                    <div className={`md:col-span-5 ${mobileTab !== 'combat' ? 'hidden md:block' : 'fade-in'}`}>
+
+                    {/* COMBAT */}
+                    <div className={`${isMobileView ? (mobileTab === 'combat' ? 'block fade-in' : 'hidden') : 'md:col-span-5'}`}>
                         <SheetCombat theme={theme} c={c} onUpdate={onUpdate} />
                     </div>
-                    <div className={`md:col-span-4 ${mobileTab !== 'bio' ? 'hidden md:block' : 'fade-in'}`}>
+
+                    {/* BIO */}
+                    <div className={`${isMobileView ? (mobileTab === 'bio' ? 'block fade-in' : 'hidden') : 'md:col-span-4'}`}>
                         <SheetBio theme={theme} c={c} onUpdate={onUpdate} />
                     </div>
                 </div>
 
+                {/* SPELLS */}
                 {c.isSpellcaster && (
-                    <div className={`mt-6 ${mobileTab !== 'spells' ? 'hidden md:block' : 'fade-in'}`}>
+                    <div className={`mt-6 ${isMobileView ? (mobileTab === 'spells' ? 'block fade-in' : 'hidden') : 'block'}`}>
                         <SheetSpells theme={theme} c={c} onUpdate={onUpdate} />
                     </div>
                 )}
             </div>
 
-            <SheetMobileNav theme={theme} tab={mobileTab} setTab={setMobileTab} isSpellcaster={c.isSpellcaster} />
+            {/* Kun vis bundmenu hvis isMobileView er sand */}
+            {isMobileView && (
+                <SheetMobileNav theme={theme} tab={mobileTab} setTab={setMobileTab} isSpellcaster={c.isSpellcaster} />
+            )}
         </div>
     );
 };

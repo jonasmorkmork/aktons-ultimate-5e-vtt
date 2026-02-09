@@ -7,34 +7,43 @@ import CharacterSheetView from './components/CharacterSheetView';
 // FIREBASE IMPORTS
 import { useAuth } from '../../context/AuthContext';
 import { useCampaign } from '../../context/CampaignContext';
+import { useStorage } from '../../context/StorageContext'; // <--- NYT HOOK
 import { db } from '../../firebase';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore'; // Behold updateDoc til Campaign Sync
 
 const CharacterSheet = () => {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
     const { activeCampaignId, campaignData } = useCampaign(); 
+    
+    // Hent storage funktionerne
+    const { saveDocument, loadDocument, isOfflineMode } = useStorage();
 
     const [characters, setCharacters] = useState([]);
     const [activeId, setActiveId] = useState(null);
     const [saveStatus, setSaveStatus] = useState('Idle');
     const [isLoaded, setIsLoaded] = useState(false);
+    
+    // NY STATE: View Mode (auto/mobile/desktop)
+    const [viewMode, setViewMode] = useState('auto'); // 'auto', 'mobile', 'desktop'
 
     // Ref til at undgå loops i sync
     const lastSyncedData = useRef("");
 
-    // 1. Initial Load (Cloud + Local)
+    // 1. Initial Load (Fail-Safe)
     useEffect(() => {
         const loadData = async () => {
+            let data = null;
+            
             if (currentUser) {
-                try {
-                    const docRef = doc(db, "users", currentUser.uid, "data", "characters");
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        setCharacters(docSnap.data().list || []);
-                    }
-                } catch (e) { console.error("Cloud load error:", e); }
+                // Bruger StorageContext's loadDocument som håndterer offline fallback automatisk
+                data = await loadDocument(`users/${currentUser.uid}/data`, 'characters');
+            } 
+            
+            if (data && data.list) {
+                setCharacters(data.list);
             } else {
+                // Fallback for gæster eller hvis ingen data findes i cloud/storage context endnu
                 const saved = localStorage.getItem('dnd_manager_v8');
                 if (saved) {
                     try { setCharacters(JSON.parse(saved)); } catch (e) { console.error("Local load error", e); }
@@ -43,9 +52,9 @@ const CharacterSheet = () => {
             setIsLoaded(true);
         };
         loadData();
-    }, [currentUser]);
+    }, [currentUser, loadDocument]);
 
-    // 2. Auto-save (Cloud + Local)
+    // 2. Auto-save (Fail-Safe)
     useEffect(() => {
         if (!isLoaded) return;
 
@@ -53,14 +62,20 @@ const CharacterSheet = () => {
             setSaveStatus('Saving...');
             
             if (currentUser) {
-                try {
-                    await setDoc(doc(db, "users", currentUser.uid, "data", "characters"), { list: characters });
-                    setSaveStatus('Saved (Cloud)');
-                } catch (e) {
-                    console.error("Cloud save error:", e);
+                // Brug saveDocument wrapperen. Den trigger offline mode hvis den fejler.
+                const success = await saveDocument(
+                    `users/${currentUser.uid}/data`, 
+                    'characters', 
+                    { list: characters }
+                );
+                
+                if (success) {
+                    setSaveStatus(isOfflineMode ? 'Saved (Local)' : 'Saved (Cloud)');
+                } else {
                     setSaveStatus('Error');
                 }
             } else {
+                // Gæste-bruger
                 localStorage.setItem('dnd_manager_v8', JSON.stringify(characters));
                 setSaveStatus('Saved (Local)');
             }
@@ -69,37 +84,32 @@ const CharacterSheet = () => {
         }, 1000);
 
         return () => clearTimeout(timer);
-    }, [characters, currentUser, isLoaded]);
+    }, [characters, currentUser, isLoaded, saveDocument, isOfflineMode]);
 
     const activeCharacter = characters.find(c => c.id === activeId);
 
     // --- 3. REAL-TIME CAMPAIGN SYNC ---
+    // Denne del er kun for online sync. Hvis vi er offline, skipper vi den.
     useEffect(() => {
-        // Kør kun hvis vi har en aktiv karakter, er i en kampagne, og data er loadet
         if (!activeCharacter || !currentUser || !activeCampaignId || !campaignData) return;
+        if (isOfflineMode) return; // Skip sync hvis vi er i fail-safe mode
 
-        // Tjek om DENNE karakter er den, der er valgt til kampagnen
         const linkedCharInfo = campaignData.playerCharacters?.[currentUser.uid];
         if (!linkedCharInfo || linkedCharInfo.id !== activeCharacter.id) return;
 
-        // Data vi vil sende til DM (Live Stats)
-        // RETTELSE: Vi sender nu HELE karakteren, så Inspect Mode virker
         const liveStats = {
             ...activeCharacter, 
             lastUpdate: Date.now()
         };
 
-        // Undgå uendeligt loop (sync kun hvis data faktisk er ændret)
         const jsonStats = JSON.stringify(liveStats);
         if (jsonStats === lastSyncedData.current) return;
 
-        // Debounce sync (2 sekunder)
         const syncTimer = setTimeout(async () => {
             try {
                 const campaignRef = doc(db, "campaigns", activeCampaignId);
                 const fieldPath = `playerCharacters.${currentUser.uid}`;
                 
-                // Opdater kun den specifikke spillers data i kampagnen
                 await updateDoc(campaignRef, {
                     [`${fieldPath}.liveData`]: liveStats
                 });
@@ -107,13 +117,15 @@ const CharacterSheet = () => {
                 lastSyncedData.current = jsonStats;
                 console.log("Synced to campaign:", activeCampaignId);
             } catch (e) {
+                // Her logger vi bare fejlen, vi trigger ikke fail-safe for campaign sync,
+                // da det er en "bonus" feature og ikke kritisk data tab.
                 console.error("Campaign sync failed:", e);
             }
         }, 2000);
 
         return () => clearTimeout(syncTimer);
 
-    }, [activeCharacter, activeCampaignId, campaignData, currentUser]);
+    }, [activeCharacter, activeCampaignId, campaignData, currentUser, isOfflineMode]);
 
 
     // --- Handlers ---
@@ -173,6 +185,9 @@ const CharacterSheet = () => {
     };
 
     if (activeId && activeCharacter) {
+        // Beregn om vi er i mobil-view (enten tvunget eller auto)
+        const isMobile = viewMode === 'mobile' || (viewMode === 'auto' && window.innerWidth < 768);
+
         return (
             <CharacterSheetView 
                 character={activeCharacter} 
@@ -180,6 +195,9 @@ const CharacterSheet = () => {
                 onBack={() => setActiveId(null)}
                 onExport={handleExport}
                 saveStatus={saveStatus}
+                // Sender view props videre
+                isMobileView={isMobile}
+                onToggleView={() => setViewMode(prev => prev === 'mobile' ? 'desktop' : 'mobile')}
             />
         );
     }

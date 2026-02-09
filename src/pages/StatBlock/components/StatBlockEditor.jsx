@@ -37,12 +37,13 @@ const emptyData = {
 
 // --- MAIN EDITOR COMPONENT ---
 const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
-    const [mode, setMode] = useState('builder'); // 'builder' | 'text' (Desktop Logic)
-    const [mobileTab, setMobileTab] = useState('builder'); // 'builder' | 'text' | 'view' (Mobile Logic)
+    const [mode, setMode] = useState('builder'); // 'builder' | 'text'
+    const [mobileTab, setMobileTab] = useState('builder'); // 'builder' | 'text' | 'view'
     const [rawText, setRawText] = useState("");
     
     const [data, setData] = useState({ ...emptyData, ...initialData });
 
+    // Load initial data
     useEffect(() => {
         if (initialData && initialData.id && data.id !== initialData.id) {
             setData(prev => ({ ...prev, id: initialData.id }));
@@ -74,6 +75,141 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         const mod = Math.floor((score - 10) / 2);
         return mod >= 0 ? `+${mod}` : `${mod}`;
     };
+
+    // --- AGGRESSIVE PARSER ---
+    const parseInput = (text) => {
+        const keywords = ['Armor Class', 'AC', 'Hit Points', 'HP', 'Speed', 'Saving Throws', 'Skills', 'Damage Vulnerabilities', 'Damage Resistances', 'Damage Immunities', 'Condition Immunities', 'Senses', 'Languages', 'Challenge', 'CR', 'Traits', 'Passive Evner'];
+        const sectionHeaders = ['Actions', 'Handlinger', 'Bonus Actions', 'Bonus Handlinger', 'Reactions', 'Reaktioner', 'Legendary Actions', 'Legendariske Handlinger'];
+
+        let normalized = text;
+        
+        keywords.forEach(kw => {
+            const regex = new RegExp(`(?<!^|\\n)(\\b${kw}\\b)`, 'gi');
+            normalized = normalized.replace(regex, '\n$1');
+        });
+
+        sectionHeaders.forEach(kw => {
+            const regex = new RegExp(`^\\s*(${kw}\\b.*)$`, 'gim');
+            normalized = normalized.replace(regex, '\n$1\n');
+        });
+
+        const lines = normalized.split('\n').filter(l => l.trim().length > 0);
+        const newData = JSON.parse(JSON.stringify(emptyData));
+
+        if (lines.length === 0) return newData;
+
+        newData.name = lines[0]?.trim() || "Unknown";
+        newData.meta = lines[1]?.trim() || "";
+
+        const extract = (regex) => { const m = normalized.match(regex); return m ? m[1].trim() : ""; };
+        newData.ac = extract(/\b(?:Armor Class|AC)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.hp = extract(/\b(?:Hit Points|HP)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.speed = extract(/\b(?:Speed)\b[\s:]*(.*?)(?=\n|$)/i);
+
+        const keys = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+        keys.forEach(key => {
+            const r = new RegExp(`\\b${key}[^\\d\\n]*(\\d+)\\s*(?:\\(([-+]?\\d+)\\))?`, 'i');
+            const m = normalized.match(r);
+            if (m) {
+                const val = parseInt(m[1]);
+                const mod = m[2] ? m[2] : getMod(val);
+                newData.stats[key] = { val, mod };
+            }
+        });
+
+        newData.props.saves = extract(/\b(?:Saving Throws|Saves)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.skills = extract(/\b(?:Skills)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.vulnerabilities = extract(/\b(?:Damage Vulnerabilities)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.resistances = extract(/\b(?:Damage Resistances|Resistances)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.immunities = extract(/\b(?:Damage Immunities|Immunities)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.conditions = extract(/\b(?:Condition Immunities)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.senses = extract(/\b(?:Senses)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.languages = extract(/\b(?:Sprog|Languages)\b[\s:]*(.*?)(?=\n|$)/i);
+        newData.props.challenge = extract(/\b(?:Challenge|CR)\b[\s:]*(.*?)(?=\n|$)/i);
+
+        const headersRegex = {
+            actions: /^Actions.*/i,
+            bonus: /^(?:Bonus Actions|Bonus Handlinger).*/i,
+            reactions: /^(?:Reactions|Reaktioner).*/i,
+            legendary: /^(?:Legendary Actions|Legendariske Handlinger).*/i,
+            traitsStart: /^(?:Traits|Passive Evner|Egenskaber|Features).*/i,
+            statsEnd: /(?:Challenge|CR)[\s:]/i
+        };
+
+        const findIdx = (regex) => { 
+            return normalized.split('\n').findIndex(l => regex.test(l.trim())); 
+        };
+        
+        const rawLines = normalized.split('\n');
+        
+        const lineIndices = [
+            { k: 'traits', i: findIdx(headersRegex.traitsStart) },
+            { k: 'actions', i: findIdx(headersRegex.actions) },
+            { k: 'bonusActions', i: findIdx(headersRegex.bonus) },
+            { k: 'reactions', i: findIdx(headersRegex.reactions) },
+            { k: 'legendary', i: findIdx(headersRegex.legendary) }
+        ].filter(x => x.i !== -1).sort((a, b) => a.i - b.i);
+
+        if (!lineIndices.some(x => x.k === 'traits')) {
+            const crIdx = rawLines.findIndex(l => headersRegex.statsEnd.test(l));
+            if (crIdx !== -1) {
+                const traitsStartIdx = crIdx + 1;
+                const firstSectionIdx = lineIndices.length > 0 ? lineIndices[0].i : rawLines.length;
+                if (traitsStartIdx < firstSectionIdx) {
+                    lineIndices.unshift({ k: 'traits', i: traitsStartIdx });
+                }
+            }
+        }
+
+        // --- RETTET LOGIK FOR PARSING ---
+        const parseChunkLines = (lines) => {
+            const res = [];
+            lines.forEach(l => {
+                const cleanL = l.trim();
+                if (!cleanL) return;
+                
+                // Spring headers over, de er allerede håndteret
+                if (Object.values(headersRegex).some(h => h.test(cleanL))) return;
+
+                const isSubProperty = /^(?:Hit|Miss|Fejlet|Success|Succes|Flavor|Note)[:.]/i.test(cleanL);
+                const nmMatch = cleanL.match(/^(?:\d+\.?\s*)?(.+?)(?::|\.)(?:\s|$)/);
+                
+                if (nmMatch && nmMatch[1].length < 60 && !isSubProperty) {
+                    // Hvis linjen starter med "Navn." eller "Navn:"
+                    const n = nmMatch[1].trim();
+                    const d = cleanL.substring(nmMatch[0].length).trim();
+                    res.push({ name: n, desc: d });
+                } else {
+                    // Hvis linjen IKKE starter med et tydeligt navn...
+                    // FIX: Vi tvinger en ny indtastning for hver linje, i stedet for at merge.
+                    res.push({ name: "", desc: cleanL });
+                }
+            });
+            return res;
+        };
+
+        lineIndices.forEach((sec, i) => {
+            const startLine = sec.i; 
+            const endLine = lineIndices[i + 1] ? lineIndices[i + 1].i : rawLines.length;
+            const hasExplicitHeader = Object.values(headersRegex).some(r => r.test(rawLines[startLine]));
+            const chunkLines = rawLines.slice(hasExplicitHeader ? startLine + 1 : startLine, endLine);
+            newData[sec.k] = parseChunkLines(chunkLines);
+        });
+
+        return newData;
+    };
+
+    // --- LIVE PARSING EFFECT ---
+    useEffect(() => {
+        if (mode !== 'text' && mobileTab !== 'text') return;
+
+        const timer = setTimeout(() => {
+            const parsed = parseInput(rawText);
+            setData(prev => ({ ...prev, ...parsed }));
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [rawText, mode, mobileTab]);
 
     const handleImportMonster = (apiData) => {
         const mapped = {
@@ -136,156 +272,19 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         return txt.trim();
     };
 
-    // --- AGGRESSIVE PARSER ---
-    const parseInput = (text) => {
-        const keywords = ['Armor Class', 'Hit Points', 'Speed', 'Saving Throws', 'Skills', 'Damage Vulnerabilities', 'Damage Resistances', 'Damage Immunities', 'Condition Immunities', 'Senses', 'Languages', 'Challenge', 'Traits', 'Passive Evner'];
-        
-        // 1. Definer headers
-        const sectionHeaders = ['Actions', 'Handlinger', 'Bonus Actions', 'Bonus Handlinger', 'Reactions', 'Reaktioner', 'Legendary Actions', 'Legendariske Handlinger'];
-
-        let normalized = text;
-        
-        // 2. Normalisering: Keywords til ny linje
-        keywords.forEach(kw => {
-            const regex = new RegExp(`(?<!^|\\n)(\\b${kw}\\b)`, 'gi');
-            normalized = normalized.replace(regex, '\n$1');
-        });
-
-        // 3. Normalisering: Sektions-headers til HELT EGEN linje
-        sectionHeaders.forEach(kw => {
-            const regex = new RegExp(`^\\s*(${kw}\\b.*)$`, 'gim'); // 'm' flag er vigtigt her!
-            normalized = normalized.replace(regex, '\n$1\n');
-        });
-
-        const lines = normalized.split('\n').filter(l => l.trim().length > 0);
-        const newData = JSON.parse(JSON.stringify(emptyData));
-
-        if (lines.length === 0) return newData;
-
-        newData.name = lines[0]?.trim() || "Unknown";
-        newData.meta = lines[1]?.trim() || "";
-
-        const extract = (regex) => { const m = normalized.match(regex); return m ? m[1].trim() : ""; };
-        newData.ac = extract(/\b(?:Armor Class|AC)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.hp = extract(/\b(?:Hit Points|HP)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.speed = extract(/\b(?:Speed)\b[\s:]*(.*?)(?=\n|$)/i);
-
-        // Stats parsing
-        const keys = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
-        keys.forEach(key => {
-            const r = new RegExp(`\\b${key}[^\\d\\n]*(\\d+)\\s*(?:\\(([-+]?\\d+)\\))?`, 'i');
-            const m = normalized.match(r);
-            if (m) {
-                const val = parseInt(m[1]);
-                const mod = m[2] ? m[2] : getMod(val);
-                newData.stats[key] = { val, mod };
-            }
-        });
-
-        newData.props.saves = extract(/\b(?:Saving Throws|Saves)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.skills = extract(/\b(?:Skills)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.vulnerabilities = extract(/\b(?:Damage Vulnerabilities)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.resistances = extract(/\b(?:Damage Resistances|Resistances)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.immunities = extract(/\b(?:Damage Immunities|Immunities)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.conditions = extract(/\b(?:Condition Immunities)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.senses = extract(/\b(?:Senses)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.languages = extract(/\b(?:Sprog|Languages)\b[\s:]*(.*?)(?=\n|$)/i);
-        newData.props.challenge = extract(/\b(?:Challenge|CR)\b[\s:]*(.*?)(?=\n|$)/i);
-
-        // --- SECTION PARSING ---
-        const headersRegex = {
-            actions: /^Actions.*/i,
-            bonus: /^(?:Bonus Actions|Bonus Handlinger).*/i,
-            reactions: /^(?:Reactions|Reaktioner).*/i,
-            legendary: /^(?:Legendary Actions|Legendariske Handlinger).*/i,
-            traitsStart: /^(?:Traits|Passive Evner|Egenskaber|Features).*/i,
-            statsEnd: /(?:Challenge|CR)[\s:]/i
-        };
-
-        const findIdx = (regex) => { 
-            return normalized.split('\n').findIndex(l => regex.test(l.trim())); 
-        };
-        
-        const rawLines = normalized.split('\n');
-        
-        const lineIndices = [
-            { k: 'traits', i: findIdx(headersRegex.traitsStart) },
-            { k: 'actions', i: findIdx(headersRegex.actions) },
-            { k: 'bonusActions', i: findIdx(headersRegex.bonus) },
-            { k: 'reactions', i: findIdx(headersRegex.reactions) },
-            { k: 'legendary', i: findIdx(headersRegex.legendary) }
-        ].filter(x => x.i !== -1).sort((a, b) => a.i - b.i);
-
-        if (!lineIndices.some(x => x.k === 'traits')) {
-            const crIdx = rawLines.findIndex(l => headersRegex.statsEnd.test(l));
-            if (crIdx !== -1) {
-                const traitsStartIdx = crIdx + 1;
-                const firstSectionIdx = lineIndices.length > 0 ? lineIndices[0].i : rawLines.length;
-                
-                if (traitsStartIdx < firstSectionIdx) {
-                    lineIndices.unshift({ k: 'traits', i: traitsStartIdx });
-                }
-            }
-        }
-
-        const parseChunkLines = (lines) => {
-            const res = [];
-            lines.forEach(l => {
-                const cleanL = l.trim();
-                if (!cleanL) return;
-                
-                if (Object.values(headersRegex).some(h => h.test(cleanL))) return;
-
-                const isSubProperty = /^(?:Hit|Miss|Fejlet|Success|Succes|Flavor|Note)[:.]/i.test(cleanL);
-                const nmMatch = cleanL.match(/^(?:\d+\.?\s*)?(.+?)(?::|\.)(?:\s|$)/);
-                
-                if (nmMatch && nmMatch[1].length < 60 && !isSubProperty) {
-                    const n = nmMatch[1].trim();
-                    const d = cleanL.substring(nmMatch[0].length).trim();
-                    res.push({ name: n, desc: d });
-                } else {
-                    if (res.length > 0) {
-                        res[res.length - 1].desc += "\n" + cleanL;
-                    } else {
-                        res.push({ name: "", desc: cleanL });
-                    }
-                }
-            });
-            return res;
-        };
-
-        lineIndices.forEach((sec, i) => {
-            const startLine = sec.i; 
-            const endLine = lineIndices[i + 1] ? lineIndices[i + 1].i : rawLines.length;
-            
-            const hasExplicitHeader = Object.values(headersRegex).some(r => r.test(rawLines[startLine]));
-            const chunkLines = rawLines.slice(hasExplicitHeader ? startLine + 1 : startLine, endLine);
-            
-            newData[sec.k] = parseChunkLines(chunkLines);
-        });
-
-        return newData;
-    };
-
     // --- DATA HANDLING ---
     const handleSwitchMode = (newMode) => { 
-        if (newMode === 'text') { setRawText(generateText(data)); } 
+        if (newMode === 'text') { 
+            setRawText(generateText(data)); 
+        } 
         setMode(newMode); 
     };
 
-    // Mobile Logic: Sync data when changing tabs
+    // Mobile Logic
     const handleMobileTabChange = (tab) => {
-        // Hvis vi går FRA text editor, skal vi gemme teksten til data
-        if (mobileTab === 'text' && tab !== 'text') {
-            const parsed = parseInput(rawText);
-            setData(prev => ({ ...prev, ...parsed }));
-        }
-        
-        // Hvis vi går TIL text editor, skal vi generere teksten fra data
         if (tab === 'text' && mobileTab !== 'text') {
             setRawText(generateText(data));
         }
-
         setMobileTab(tab);
     };
 

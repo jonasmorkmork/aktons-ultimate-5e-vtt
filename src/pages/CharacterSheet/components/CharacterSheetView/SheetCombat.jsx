@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Icons, ProficiencyButton } from '../CharacterIcons'; 
 import { getMod, formatMod, getProfBonus, conditionOptions, getTabTitle } from '../CharacterHelpers'; 
 import { useCampaign } from '../../../../context/CampaignContext'; 
@@ -14,6 +14,39 @@ const SheetCombat = ({ c, character, char, data, onUpdate, theme }) => {
 
     // --- ROBUST DATA HANDLING ---
     const activeChar = c || character || char || data;
+
+    // --- DEBOUNCE LOGIC FOR HP SYNC ---
+    // Vi bruger en ref til at undgå at sende data ved første render
+    const isFirstRun = useRef(true);
+
+    useEffect(() => {
+        // Hvis vi ikke har data, eller det er første render, gør intet
+        if (!activeChar || isFirstRun.current) {
+            isFirstRun.current = false;
+            return;
+        }
+
+        // Opsæt timer
+        const timer = setTimeout(() => {
+            // Send kun hvis funktionen findes
+            if (syncHpToCombat && activeChar.hp) {
+                // Vi sender de aktuelle værdier fra activeChar prop'en, som er opdateret via onUpdate
+                syncHpToCombat(
+                    activeChar.hp.current, 
+                    activeChar.hp.max, 
+                    activeChar.hp.temp || 0, 
+                    activeChar.ownerId
+                );
+                // Console log til debug (kan fjernes)
+                // console.log("Debounced HP Sync Sent to Firebase"); 
+            }
+        }, 1500); // Venter 1.5 sekunder efter sidste ændring
+
+        // Ryd timer hvis værdierne ændres igen inden for 1.5 sek
+        return () => clearTimeout(timer);
+
+    }, [activeChar?.hp?.current, activeChar?.hp?.max, activeChar?.hp?.temp, activeChar?.ownerId, syncHpToCombat]);
+
 
     if (!activeChar) {
         return (
@@ -64,9 +97,8 @@ const SheetCombat = ({ c, character, char, data, onUpdate, theme }) => {
             else if (actionType === 'set') newHp.temp = amount;
         }
         
+        // Vi opdaterer kun lokalt state her. useEffect tager sig af databasen.
         onUpdate({ hp: newHp });
-        // FIX: Sender ownerId med, hvis den findes (fra Inspect Mode)
-        if (syncHpToCombat) syncHpToCombat(newHp.current, newHp.max, newHp.temp, internalC.ownerId);
 
         setEditingHp(null);
         setHpInputValue("");
@@ -74,9 +106,8 @@ const SheetCombat = ({ c, character, char, data, onUpdate, theme }) => {
 
     const handleMaxHpChange = (val) => {
         const newVal = parseInt(val) || 0;
+        // Vi opdaterer kun lokalt state her. useEffect tager sig af databasen.
         handleNestedChange('hp', 'max', newVal);
-        // FIX: Sender ownerId med
-        if (syncHpToCombat) syncHpToCombat(internalC.hp.current, newVal, internalC.hp.temp || 0, internalC.ownerId);
     };
 
     const toggleCondition = (cond) => {

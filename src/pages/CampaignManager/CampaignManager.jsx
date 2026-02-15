@@ -99,21 +99,20 @@ const CampaignManager = () => {
         fetchData();
     }, [currentUser]);
 
-    // MESSAGES LISTENER - FIXED: FJERNET AUTO-READ LOOP
+    // MESSAGES LISTENER
     useEffect(() => {
         if (!activeCampaignId || !currentUser) return;
         
-        // Henter kun beskeder sendt TIL denne bruger (hvis DM: "DM", hvis Spiller: UID eller "ALL")
-        // Note: For simpelheds skyld lytter vi her efter "DM" beskeder hvis man er DM.
-        // Hvis man er spiller skal man ideelt set lytte efter sit eget ID. 
-        // Men din nuværende logik ser ud til kun at håndtere "To: DM". 
-        // Lad os holde det simpelt og sikkert:
+        const myTargets = [currentUser.uid, "ALL"];
+        if (campaignData?.dmId === currentUser.uid) {
+            myTargets.push("DM");
+        }
         
         const q = query(
             collection(db, "campaigns", activeCampaignId, "messages"), 
-            where("to", "==", "DM"), 
+            where("to", "in", myTargets),
             where("read", "==", false),
-            limit(20) // Begræns antal for at undgå massivt load
+            limit(20)
         );
         
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -121,17 +120,18 @@ const CampaignManager = () => {
                 if (change.type === "added") {
                     const msg = change.doc.data();
                     const msgId = change.doc.id;
-                    
-                    // FIX: Vi tilføjer kun til køen lokalt. Vi opdaterer IKKE databasen her.
                     setMessageQueue(prev => {
-                        if (prev.some(m => m.id === msgId)) return prev; // Undgå dubletter
+                        if (prev.some(m => m.id === msgId)) return prev; 
                         return [...prev, { ...msg, id: msgId }];
                     });
+                }
+                if (change.type === "removed") {
+                    setMessageQueue(prev => prev.filter(m => m.id !== change.doc.id));
                 }
             });
         });
         return () => unsubscribe();
-    }, [activeCampaignId, currentUser]);
+    }, [activeCampaignId, currentUser, campaignData?.dmId]);
 
     useEffect(() => {
         if (messageQueue.length > 0) document.title = `(${messageQueue.length}) New Message`;
@@ -149,23 +149,18 @@ const CampaignManager = () => {
 
     // --- HANDLERS ---
 
-    // FIX: Manuel dismiss funktion
     const handleDismissMessage = async () => {
         if (messageQueue.length === 0) return;
-        
         const msgToDismiss = messageQueue[0];
-        
-        // 1. Fjern fra lokal kø med det samme (UI responsivitet)
         setMessageQueue(prev => prev.slice(1));
         
-        // 2. Opdater i databasen (marker som læst)
         if (msgToDismiss.id && activeCampaignId) {
             try {
                 await updateDoc(doc(db, "campaigns", activeCampaignId, "messages", msgToDismiss.id), { 
                     read: true 
                 });
             } catch (e) {
-                console.error("Failed to mark message as read:", e);
+                console.error("Kunne ikke markere besked som læst:", e);
             }
         }
     };
@@ -207,6 +202,14 @@ const CampaignManager = () => {
             }
             const campaignDoc = querySnapshot.docs[0];
             const campaignData = campaignDoc.data();
+            
+            // --- FIX: Bloker hvis man er DM ---
+            if (campaignData.dmId === currentUser.uid) {
+                showToast("Du er DM for denne kampagne og kan ikke joine som spiller.", 'error');
+                setIsProcessing(false);
+                return;
+            }
+            // ---------------------------------
             
             if (!campaignData.players.includes(currentUser.uid)) {
                 await updateDoc(doc(db, "campaigns", campaignDoc.id), { players: arrayUnion(currentUser.uid) });
@@ -299,7 +302,7 @@ const CampaignManager = () => {
         try {
             await addDoc(collection(db, "campaigns", activeCampaignId, "messages"), { 
                 text: messageText, 
-                sender: "DM", 
+                sender: isDmForActive ? "DM" : (currentUser.displayName || "Player"), 
                 senderId: currentUser.uid, 
                 to: messageTarget, 
                 timestamp: serverTimestamp(), 
@@ -324,9 +327,15 @@ const CampaignManager = () => {
     };
 
     const isDmForActive = campaignData?.dmId === currentUser?.uid;
+    
+    // --- FIX: Filtrer DM's egne karakterer fra ---
     const activePlayers = campaignData?.playerCharacters 
-        ? Object.entries(campaignData.playerCharacters).sort(([, a], [, b]) => (a.name || "").localeCompare(b.name || ""))
+        ? Object.entries(campaignData.playerCharacters)
+            .filter(([uid]) => uid !== campaignData.dmId) // Fjern DM fra listen
+            .sort(([, a], [, b]) => (a.name || "").localeCompare(b.name || ""))
         : [];
+    // --------------------------------------------
+
     const activeIncomingMsg = messageQueue.length > 0 ? messageQueue[0] : null;
 
     return (
@@ -483,13 +492,19 @@ const CampaignManager = () => {
                 </div>
             )}
 
-            {/* Character Inspection (Read Only) */}
+            {/* Character Inspection (Read Only) - FIXED SCROLLING */}
             {inspectingChar && (
                 <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
                     <div className="bg-slate-900 border border-slate-700 w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-xl shadow-2xl relative flex flex-col">
                         <div className="absolute top-4 right-4 z-50"><button onClick={() => setInspectingChar(null)} className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-full shadow-lg"><CloseIcon /></button></div>
-                        <div className="bg-amber-900/80 text-amber-100 text-center text-xs font-bold uppercase py-1 tracking-widest">Spectator Mode (Read Only)</div>
-                        <CharacterSheetView character={inspectingChar} onUpdate={() => {}} onBack={() => setInspectingChar(null)} onExport={() => {}} saveStatus="Viewing" />
+                        
+                        {/* Header Banner - Shrink 0 forhindrer den i at blive mast */}
+                        <div className="bg-amber-900/80 text-amber-100 text-center text-xs font-bold uppercase py-1 tracking-widest shrink-0">Spectator Mode (Read Only)</div>
+                        
+                        {/* Scroll Container */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            <CharacterSheetView character={inspectingChar} onUpdate={() => {}} onBack={() => setInspectingChar(null)} onExport={() => {}} saveStatus="Viewing" />
+                        </div>
                     </div>
                 </div>
             )}

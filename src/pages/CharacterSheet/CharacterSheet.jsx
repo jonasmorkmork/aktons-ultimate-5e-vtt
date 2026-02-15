@@ -88,44 +88,47 @@ const CharacterSheet = () => {
 
     const activeCharacter = characters.find(c => c.id === activeId);
 
-    // --- 3. REAL-TIME CAMPAIGN SYNC ---
-    // Denne del er kun for online sync. Hvis vi er offline, skipper vi den.
+// --- 3. REAL-TIME CAMPAIGN SYNC (FINAL FIX) ---
     useEffect(() => {
-        if (!activeCharacter || !currentUser || !activeCampaignId || !campaignData) return;
-        if (isOfflineMode) return; // Skip sync hvis vi er i fail-safe mode
+        // Stop hvis vi mangler data, er offline, eller ikke er i en kampagne
+        if (!activeCharacter || !currentUser || !activeCampaignId || isOfflineMode) return;
 
-        const linkedCharInfo = campaignData.playerCharacters?.[currentUser.uid];
-        if (!linkedCharInfo || linkedCharInfo.id !== activeCharacter.id) return;
+        // 1. Opret kopi og FJERN 'lastUpdate' fra sammenligningen for at garantere stabilitet
+        const { lastUpdate, ...charDataWithoutTime } = activeCharacter;
+        const jsonToCompare = JSON.stringify(charDataWithoutTime);
 
-        const liveStats = {
-            ...activeCharacter, 
-            lastUpdate: Date.now()
-        };
+        // 2. Hvis data (navn, hp, stats etc.) er identisk med sidst sendte, så STOP her.
+        if (jsonToCompare === lastSyncedData.current) return;
 
-        const jsonStats = JSON.stringify(liveStats);
-        if (jsonStats === lastSyncedData.current) return;
-
+        // 3. Start timer for at undgå spam ved hurtige tryk
         const syncTimer = setTimeout(async () => {
             try {
+                // Opdater ref før vi sender (låser tilstanden)
+                lastSyncedData.current = jsonToCompare;
+
                 const campaignRef = doc(db, "campaigns", activeCampaignId);
                 const fieldPath = `playerCharacters.${currentUser.uid}`;
                 
+                // Tilføj tidsstempel NU, kun til den data vi sender
+                const dataToSend = {
+                    ...charDataWithoutTime, // Brug data uden gammel tid
+                    lastUpdate: Date.now()  // Sæt ny tid
+                };
+
                 await updateDoc(campaignRef, {
-                    [`${fieldPath}.liveData`]: liveStats
+                    [`${fieldPath}.liveData`]: dataToSend
                 });
                 
-                lastSyncedData.current = jsonStats;
                 console.log("Synced to campaign:", activeCampaignId);
             } catch (e) {
-                // Her logger vi bare fejlen, vi trigger ikke fail-safe for campaign sync,
-                // da det er en "bonus" feature og ikke kritisk data tab.
                 console.error("Campaign sync failed:", e);
             }
-        }, 2000);
+        }, 2000); // 2 sekunders debounce
 
         return () => clearTimeout(syncTimer);
 
-    }, [activeCharacter, activeCampaignId, campaignData, currentUser, isOfflineMode]);
+    // VIGTIGT: Ingen 'campaignData' i dependencies!
+    }, [activeCharacter, activeCampaignId, currentUser, isOfflineMode]);
 
 
     // --- Handlers ---

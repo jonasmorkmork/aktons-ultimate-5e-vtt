@@ -1,103 +1,60 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { 
-    BookIcon, SwordIcon, DiceIcon, // Brug dine eksisterende ikoner eller lav simple placeholders
-} from '../CampaignManager/components/CampaignIcons';
-
-// Hvis du mangler ikoner, kan du lave simple SVG'er her eller importere dem
-const H1Icon = () => <span className="font-serif font-bold text-xs">H1</span>;
-const H2Icon = () => <span className="font-serif font-bold text-xs">H2</span>;
-const ListIcon = () => <span className="font-bold text-xs">•</span>;
 
 export const SlashMenu = forwardRef((props, ref) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Definer kommandoerne her
-  const items = [
-    {
-      title: 'Heading 1',
-      description: 'Big section header',
-      icon: <H1Icon />,
-      command: ({ editor, range }) => {
-        editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run();
-      },
-    },
-    {
-      title: 'Heading 2',
-      description: 'Sub-section header',
-      icon: <H2Icon />,
-      command: ({ editor, range }) => {
-        editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run();
-      },
-    },
-    {
-      title: 'Bullet List',
-      description: 'Create a simple list',
-      icon: <ListIcon />,
-      command: ({ editor, range }) => {
-        editor.chain().focus().deleteRange(range).toggleBulletList().run();
-      },
-    },
-    {
-      title: 'Divider',
-      description: 'Horizontal line',
-      icon: <span className="text-xs">―</span>,
-      command: ({ editor, range }) => {
-        editor.chain().focus().deleteRange(range).setHorizontalRule().run();
-      },
-    },
-    {
-        title: 'Roll Dice',
-        description: 'Insert [1d20]',
-        icon: <span className="text-xs font-bold">D20</span>,
-        command: ({ editor, range }) => {
-          editor.chain().focus().deleteRange(range).insertContent(' [1d20] ').run();
-        },
-      },
-  ];
-
+  // Vælg item funktion
   const selectItem = (index) => {
-    const item = items[index];
+    const item = props.items[index];
     if (item) {
-      item.command(props);
+      props.command(item);
     }
   };
 
-  useEffect(() => setSelectedIndex(0), [items]);
+  // Nulstil index når listen ændres (f.eks. ved søgning)
+  useEffect(() => setSelectedIndex(0), [props.items]);
 
+  // Exposed methods til Tiptap renderer
   useImperativeHandle(ref, () => ({
     onKeyDown: ({ event }) => {
       if (event.key === 'ArrowUp') {
-        setSelectedIndex((selectedIndex + items.length - 1) % items.length);
-        return true;
+        setSelectedIndex((selectedIndex + props.items.length - 1) % props.items.length);
+        return true; // Return true stopper Tiptap fra at flyttecursoren op
       }
       if (event.key === 'ArrowDown') {
-        setSelectedIndex((selectedIndex + 1) % items.length);
-        return true;
+        setSelectedIndex((selectedIndex + 1) % props.items.length);
+        return true; // Return true stopper Tiptap fra at flytte cursoren ned
       }
       if (event.key === 'Enter') {
         selectItem(selectedIndex);
-        return true;
+        return true; // Return true stopper Tiptap fra at lave ny linje
       }
       return false;
     },
   }));
 
+  if (!props.items || props.items.length === 0) {
+      return null;
+  }
+
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px] flex flex-col p-1">
-      {items.map((item, index) => (
+    <div className="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px] flex flex-col p-1 animate-in fade-in zoom-in-95 duration-100">
+      <div className="text-[10px] uppercase font-bold text-slate-500 px-2 py-1 border-b border-slate-800 mb-1">Commands</div>
+      {props.items.map((item, index) => (
         <button
           key={index}
           onClick={() => selectItem(index)}
+          onMouseEnter={() => setSelectedIndex(index)} // Gør musen også opdaterer index
           className={`flex items-center gap-3 px-3 py-2 text-left rounded text-sm transition-colors ${
             index === selectedIndex ? 'bg-amber-600 text-white' : 'text-slate-300 hover:bg-slate-800'
           }`}
         >
-          <div className={`w-6 h-6 flex items-center justify-center rounded border ${index === selectedIndex ? 'border-amber-400 bg-amber-700' : 'border-slate-600 bg-slate-800'}`}>
+          <div className={`w-6 h-6 flex items-center justify-center rounded border shadow-sm ${index === selectedIndex ? 'border-amber-400 bg-amber-700' : 'border-slate-700 bg-slate-950'}`}>
             {item.icon}
           </div>
           <div className="flex flex-col">
-            <span className="font-bold leading-none">{item.title}</span>
-            <span className={`text-[10px] leading-none mt-1 ${index === selectedIndex ? 'text-amber-200' : 'text-slate-500'}`}>{item.description}</span>
+              <span className="font-bold text-xs">{item.title}</span>
+              <span className={`text-[10px] ${index === selectedIndex ? 'text-amber-200' : 'text-slate-500'}`}>{item.description}</span>
           </div>
         </button>
       ))}

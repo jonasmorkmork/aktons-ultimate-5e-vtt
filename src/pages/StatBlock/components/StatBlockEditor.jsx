@@ -107,6 +107,8 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
         newData.speed = extract(/\b(?:Speed)\b[\s:]*(.*?)(?=\n|$)/i);
 
         const keys = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+        
+        // 1. Standard Parser (STR 16 (+3) på samme linje)
         keys.forEach(key => {
             const r = new RegExp(`\\b${key}[^\\d\\n]*(\\d+)\\s*(?:\\(([-+]?\\d+)\\))?`, 'i');
             const m = normalized.match(r);
@@ -116,6 +118,25 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
                 newData.stats[key] = { val, mod };
             }
         });
+
+        // 2. [NY] Table Parser (Headers på én linje, værdier på næste)
+        // Finder linjen med alle headers (Str Dex Con...)
+        const headerRowIdx = lines.findIndex(l => /\bSTR\b.*\bDEX\b.*\bCON\b.*\bINT\b.*\bWIS\b.*\bCHA\b/i.test(l));
+        
+        if (headerRowIdx !== -1 && lines[headerRowIdx + 1]) {
+            const valLine = lines[headerRowIdx + 1];
+            // Matcher mønsteret "16 (+3)" seks gange i træk på linjen
+            const matches = valLine.match(/(\d+)\s*\(([+-]?\d+)\)/g);
+            
+            if (matches && matches.length >= 6) {
+                keys.forEach((k, i) => {
+                    const m = matches[i].match(/(\d+)\s*\(([+-]?\d+)\)/);
+                    if (m) {
+                        newData.stats[k] = { val: parseInt(m[1]), mod: m[2] };
+                    }
+                });
+            }
+        }
 
         newData.props.saves = extract(/\b(?:Saving Throws|Saves)\b[\s:]*(.*?)(?=\n|$)/i);
         newData.props.skills = extract(/\b(?:Skills)\b[\s:]*(.*?)(?=\n|$)/i);
@@ -161,27 +182,22 @@ const StatBlockEditor = ({ initialData, onSave, onCancel }) => {
             }
         }
 
-        // --- RETTET LOGIK FOR PARSING ---
         const parseChunkLines = (lines) => {
             const res = [];
             lines.forEach(l => {
                 const cleanL = l.trim();
                 if (!cleanL) return;
                 
-                // Spring headers over, de er allerede håndteret
                 if (Object.values(headersRegex).some(h => h.test(cleanL))) return;
 
                 const isSubProperty = /^(?:Hit|Miss|Fejlet|Success|Succes|Flavor|Note)[:.]/i.test(cleanL);
                 const nmMatch = cleanL.match(/^(?:\d+\.?\s*)?(.+?)(?::|\.)(?:\s|$)/);
                 
                 if (nmMatch && nmMatch[1].length < 60 && !isSubProperty) {
-                    // Hvis linjen starter med "Navn." eller "Navn:"
                     const n = nmMatch[1].trim();
                     const d = cleanL.substring(nmMatch[0].length).trim();
                     res.push({ name: n, desc: d });
                 } else {
-                    // Hvis linjen IKKE starter med et tydeligt navn...
-                    // FIX: Vi tvinger en ny indtastning for hver linje, i stedet for at merge.
                     res.push({ name: "", desc: cleanL });
                 }
             });

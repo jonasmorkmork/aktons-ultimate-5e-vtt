@@ -32,7 +32,11 @@ const PlayerDetailCard = ({ player, uid, onSendToCombat, onInspect, onKick, isDm
             <div className="flex justify-between items-start mb-3">
                 <div className="overflow-hidden">
                     <h3 className="text-lg font-bold text-white truncate">{char.name}</h3>
-                    <div className="text-xs text-slate-500 truncate">Lvl {level} {char.class}</div>
+                    {/* Subclass er flyttet herop for at gøre plads i bunden */}
+                    <div className="text-xs text-slate-500 truncate">
+                        Lvl {level} {char.class} 
+                        {char.subclass && <span className="text-slate-600 italic"> - {char.subclass}</span>}
+                    </div>
                 </div>
                 
                 {/* DM ACTION BUTTONS */}
@@ -63,24 +67,43 @@ const PlayerDetailCard = ({ player, uid, onSendToCombat, onInspect, onKick, isDm
                 </div>
             </div>
 
-            {/* Quick Stats Grid */}
+            {/* Quick Stats Grid - AC i midten */}
             <div className="grid grid-cols-3 gap-2 mb-3">
-                <div className="bg-slate-950 rounded p-1.5 border border-slate-800"><div className="text-[10px] text-slate-500 uppercase font-bold">HP</div><div className="text-lg font-bold text-green-500">{hp.current} <span className="text-xs text-slate-600">/{hp.max}</span></div></div>
-                <div className="bg-slate-950 rounded p-1.5 border border-slate-800"><div className="text-[10px] text-slate-500 uppercase font-bold">Pass. Perc</div><div className="text-lg font-bold text-slate-300">{passivePerception}</div></div>
-                <div className="bg-slate-950 rounded p-1.5 border border-slate-800"><div className="text-[10px] text-slate-500 uppercase font-bold">Speed</div><div className="text-lg font-bold text-slate-300">{char.speed}</div></div>
+                <div className="bg-slate-950 rounded p-1.5 border border-slate-800">
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">HP</div>
+                    <div className="text-lg font-bold text-green-500">{hp.current} <span className="text-xs text-slate-600">/{hp.max}</span></div>
+                </div>
+                <div className="bg-slate-950 rounded p-1.5 border border-slate-800">
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">AC</div>
+                    <div className="text-lg font-bold text-blue-400">{char.ac}</div>
+                </div>
+                <div className="bg-slate-950 rounded p-1.5 border border-slate-800">
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">Speed</div>
+                    <div className="text-lg font-bold text-slate-300">{char.speed}</div>
+                </div>
             </div>
             
+            {/* Secondary Stats Row (FIXED LAYOUT) */}
             <div className="flex justify-between items-center text-xs bg-slate-950/50 p-2 rounded mb-3">
-                <div className="flex gap-4">
-                    <div><span className="text-slate-500 font-bold">Prof:</span> +{pb}</div>
-                    {spellDc && <div><span className="text-purple-400 font-bold">DC:</span> {spellDc}</div>}
-                </div>
-                <div className="text-slate-500 italic truncate max-w-[100px]">{char.subclass}</div>
+                {/* Venstre: Proficiency Bonus */}
+                <div><span className="text-slate-500 font-bold">Prof:</span> +{pb}</div>
+                
+                {/* Midten eller Højre: Passive Perception */}
+                {/* Hvis DC findes, står PP i midten. Hvis ikke, står den til højre (pga. justify-between) */}
+                <div><span className="text-slate-500 font-bold">PP:</span> {passivePerception}</div>
+                
+                {/* Højre: Spell Save DC (hvis den findes) */}
+                {spellDc && (
+                    <div><span className="text-purple-400 font-bold">DC:</span> {spellDc}</div>
+                )}
             </div>
             
             <div className="grid grid-cols-6 gap-1">
                 {abilityOrder.map((key) => (
-                    <div key={key} className="flex flex-col items-center"><div className="text-[8px] uppercase text-slate-600 font-bold">{key.substring(0,3)}</div><div className="text-xs font-bold text-slate-400">{formatMod(getMod(stats[key]))}</div></div>
+                    <div key={key} className="flex flex-col items-center">
+                        <div className="text-[8px] uppercase text-slate-600 font-bold">{key.substring(0,3)}</div>
+                        <div className="text-xs font-bold text-slate-400">{formatMod(getMod(stats[key]))}</div>
+                    </div>
                 ))}
             </div>
         </div>

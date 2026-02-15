@@ -121,15 +121,15 @@ const SheetToolbar = ({ c, onUpdate, onBack, onExport, saveStatus, onLongRest, o
                     </button>
 
                     <button onClick={onOpenMessage} className={`flex items-center gap-1.5 px-3 py-1.5 ${theme.button} hover:bg-opacity-80 rounded-lg text-[10px] font-bold uppercase border ${theme.border} shadow-sm transition-all ${theme.subText} hover:${theme.text} shrink-0`}>
-                        <Icons.MessageIcon /> Msg DM
+                        <Icons.MessageIcon /> Message DM
                     </button>
                     
                     <button onClick={() => handleChange('heroicInspiration', !c.heroicInspiration)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border transition-all shrink-0 ${c.heroicInspiration ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_10px_rgba(217,119,6,0.4)]' : `${theme.button} ${theme.border} ${theme.subText} hover:border-zinc-500`}`}>
-                        <Icons.CheckSquare checked={c.heroicInspiration} /> Heroic Insp.
+                        <Icons.CheckSquare checked={c.heroicInspiration} /> Heroic Inspiration
                     </button>
                     
                     <button onClick={() => handleChange('isSpellcaster', !c.isSpellcaster)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border transition-all shrink-0 ${c.isSpellcaster ? `${theme.accentBg} ${theme.accentBorder} text-white shadow-[0_0_10px_rgba(185,28,28,0.4)]` : `${theme.button} ${theme.border} ${theme.subText} hover:border-zinc-500`}`}>
-                        <Icons.Flame /> Magic
+                        <Icons.Flame /> Spellcaster
                     </button>
                 </div>
             </div>

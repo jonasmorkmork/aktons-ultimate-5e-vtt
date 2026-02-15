@@ -18,7 +18,8 @@ const SpellBrowser = ({ isOpen, onClose, onAddSpell }) => {
         return matchesSearch && matchesLevel && matchesClass;
     });
 
-    const dndClasses = ["Bard", "Cleric", "Druid", "Paladin", "Ranger", "Sorcerer", "Warlock", "Wizard"];
+    // Tilføjet "Artificer" til listen
+    const dndClasses = ["Artificer", "Bard", "Cleric", "Druid", "Paladin", "Ranger", "Sorcerer", "Warlock", "Wizard"];
 
     // Hjælper til at håndtere klik på en række
     const toggleExpand = (spellName) => {

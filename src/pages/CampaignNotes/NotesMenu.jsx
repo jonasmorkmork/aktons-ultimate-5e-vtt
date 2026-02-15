@@ -1,20 +1,12 @@
 import React from 'react';
-import { PlusIcon, TrashIcon, BookIcon, ChevronRight } from '../CampaignManager/components/CampaignIcons';
+import { PlusIcon, TrashIcon, BookIcon, ChevronRight, EditIcon, UploadIcon } from '../CampaignManager/components/CampaignIcons';
 import { useNavigate } from 'react-router-dom';
 import { NOTEBOOK_COLORS } from './CreateNotebookModal'; 
 
 // Fallback hvis importen fejler eller listen er tom
 const DEFAULT_COLOR = { name: 'Amber', hex: '#f59e0b', border: 'border-amber-500' };
 
-// Definer PencilIcon lokalt her for at være sikker på den findes
-const PencilIcon = ({ size = 24, className = "" }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-        <path d="m15 5 4 4"/>
-    </svg>
-);
-
-const NotebookCard = ({ notebook, onClick, onDelete, onEdit }) => {
+const NotebookCard = ({ notebook, onClick, onDelete, onEdit, onExport }) => {
     // SIKKERHEDSNET: Hvis NOTEBOOK_COLORS er undefined, brug DEFAULT_COLOR
     const colors = (typeof NOTEBOOK_COLORS !== 'undefined' && NOTEBOOK_COLORS.length > 0) ? NOTEBOOK_COLORS : [DEFAULT_COLOR];
     const themeColor = notebook.color || colors[0];
@@ -47,13 +39,22 @@ const NotebookCard = ({ notebook, onClick, onDelete, onEdit }) => {
                     
                     {/* Action Buttons */}
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {/* EXPORT KNAP */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onExport(notebook.id); }}
+                            className="text-slate-400 hover:text-blue-400 p-2 rounded-full bg-black/20 hover:bg-black/50 transition-colors"
+                            title="Export Notebook as ZIP"
+                        >
+                            <UploadIcon size={16} className="rotate-180" /> {/* Roteret for at ligne download */}
+                        </button>
+
                         {/* REDIGER KNAP */}
                         <button 
                             onClick={(e) => { e.stopPropagation(); onEdit(notebook); }}
                             className="text-slate-400 hover:text-white p-2 rounded-full bg-black/20 hover:bg-black/50 transition-colors"
                             title="Edit Notebook"
                         >
-                            <PencilIcon size={16} />
+                            <EditIcon size={16} />
                         </button>
                         
                         {/* SLET KNAP */}
@@ -78,7 +79,7 @@ const NotebookCard = ({ notebook, onClick, onDelete, onEdit }) => {
     );
 };
 
-const NotesMenu = ({ notebooks, onCreate, onOpen, onDelete, onEdit }) => {
+const NotesMenu = ({ notebooks, onCreate, onOpen, onDelete, onEdit, onExport }) => {
     const navigate = useNavigate();
 
     return (
@@ -114,7 +115,8 @@ const NotesMenu = ({ notebooks, onCreate, onOpen, onDelete, onEdit }) => {
                         notebook={notebook} 
                         onClick={() => onOpen(notebook)} 
                         onDelete={onDelete}
-                        onEdit={onEdit} 
+                        onEdit={onEdit}
+                        onExport={onExport} // Send export funktion videre
                     />
                 ))}
             </div>

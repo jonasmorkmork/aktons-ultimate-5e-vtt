@@ -133,7 +133,7 @@ const CombatantRow = ({
                                         {/* DAMAGE (Red) */}
                                         <button onMouseDown={(e)=>e.preventDefault()} onClick={(e)=>{e.stopPropagation(); handleSave('dmg');}} className="px-2 bg-rose-950 hover:bg-rose-800 text-rose-200 border-r border-rose-900 h-full flex items-center justify-center transition-colors" title="Damage"><Sword size={10}/></button>
                                         
-                                        {/* INPUT */}
+                                        {/* INPUT (HER ER DEN ENESTE ÆNDRING) */}
                                         <input 
                                             ref={hpInputRef} 
                                             type="number" 
@@ -149,7 +149,20 @@ const CombatantRow = ({
                                                 else if (e.key === 'Escape') { setHpEditId(null); setHpEditValue(''); }
                                                 else if (e.key === '+') { e.preventDefault(); handleSave('heal'); }
                                                 else if (e.key === '-') { e.preventDefault(); handleSave('dmg'); }
-                                                else if (e.key === '*') { e.preventDefault(); handleSave('temp'); } 
+                                                else if (e.key === '*') { e.preventDefault(); handleSave('temp'); }
+                                                
+                                                // --- R / V SHORTCUTS FIX ---
+                                                else if (e.key.toLowerCase() === 'r') {
+                                                    e.preventDefault();
+                                                    const val = parseInt(hpEditValue);
+                                                    if (!isNaN(val)) setHpEditValue(Math.floor(val / 2).toString());
+                                                }
+                                                else if (e.key.toLowerCase() === 'v') {
+                                                    e.preventDefault();
+                                                    const val = parseInt(hpEditValue);
+                                                    if (!isNaN(val)) setHpEditValue((val * 2).toString());
+                                                }
+                                                // ---------------------------
                                             }} 
                                         />
 
